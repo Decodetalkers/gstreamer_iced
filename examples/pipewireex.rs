@@ -72,9 +72,7 @@ impl GstreamerIcedProgram {
                     .into();
             }
         };
-        let frame = vframe
-            .frame_handle()
-            .unwrap_or(image::Handle::from_bytes(MEDIA_PLAYER));
+        let frame = self.handle.clone();
 
         let btn = match vframe.play_status() {
             PlayStatus::Stop | PlayStatus::End => button(text("|>")).on_press(
