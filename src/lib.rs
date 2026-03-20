@@ -10,6 +10,7 @@ use iced::futures::SinkExt;
 use iced::futures::StreamExt;
 use iced::widget::image;
 use mpsc::{Receiver, Sender};
+use smol::lock::Mutex as AsyncMutex;
 use std::hash::Hash;
 use std::sync::{Arc, Mutex};
 use thiserror::Error;
@@ -53,7 +54,7 @@ pub struct GstreamerIced<const X: usize> {
     bus: gst::Bus,
     source: gst::Bin,
     play_status: PlayStatus,
-    rv: Option<mpsc::Receiver<GStreamerMessage>>,
+    rv: Arc<AsyncMutex<mpsc::Receiver<GStreamerMessage>>>,
     duration: std::time::Duration,
     position: std::time::Duration,
     info_get_started: bool,
@@ -121,7 +122,7 @@ pub enum GStreamerMessage {
     FrameUpdate,
     PlayStatusChanged(PlayStatus),
     BusGoToEnd,
-    Ready(Sender<Receiver<GStreamerMessage>>),
+    Ready(Sender<Arc<AsyncMutex<Receiver<GStreamerMessage>>>>),
 }
 
 impl<const X: usize> Drop for GstreamerIced<X> {
@@ -166,9 +167,10 @@ impl<const X: usize> GstreamerIced<X> {
                     iced::stream::channel(100, |mut output: Sender<GStreamerMessage>| async move {
                         let (sender, mut receiver) = mpsc::channel(100);
                         let _ = output.send(GStreamerMessage::Ready(sender)).await;
-                        let Some(mut rv) = receiver.next().await else {
+                        let Some(rv) = receiver.next().await else {
                             return;
                         };
+                        let mut rv = rv.lock().await;
                         loop {
                             let Some(message) = rv.next().await else {
                                 continue;

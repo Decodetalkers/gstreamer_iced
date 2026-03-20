@@ -4,6 +4,7 @@ use gst::GenericFormattedValue;
 use gstreamer as gst;
 use gstreamer_app as gst_app;
 use iced::Task;
+use smol::lock::Mutex as AsyncMutex;
 use std::sync::{Arc, Mutex};
 
 use super::{FrameData, GStreamerMessage, GstreamerIced, IcedGStreamerError, PlayStatus, Position};
@@ -93,7 +94,7 @@ impl GstreamerIcedBase {
             bus: source.bus().unwrap(),
             source,
             play_status: PlayStatus::Stop,
-            rv: Some(rv),
+            rv: Arc::new(AsyncMutex::new(rv)),
             duration: std::time::Duration::from_nanos(0),
             position: std::time::Duration::from_nanos(0),
             info_get_started: !islive,
@@ -151,7 +152,7 @@ impl GstreamerIcedBase {
                 self.play_status = PlayStatus::End;
             }
             GStreamerMessage::Ready(mut sender) => {
-                let rv = self.rv.take().unwrap();
+                let rv = self.rv.clone();
                 let _ = sender.try_send(rv);
             }
             _ => {}

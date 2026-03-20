@@ -3,6 +3,7 @@ use gst::prelude::*;
 use gstreamer as gst;
 use gstreamer_app as gst_app;
 use iced::Task;
+use smol::lock::Mutex as AsyncMutex;
 use std::sync::{Arc, Mutex};
 
 use super::{FrameData, GStreamerMessage, GstreamerIced, IcedGStreamerError, PlayStatus};
@@ -72,7 +73,7 @@ impl GstreamerIcedPipewire {
             bus: source.bus().unwrap(),
             source: source.into(),
             play_status: PlayStatus::Playing,
-            rv: Some(rv),
+            rv: Arc::new(AsyncMutex::new(rv)),
             duration: std::time::Duration::from_nanos(0),
             position: std::time::Duration::from_nanos(0),
             info_get_started: true,
@@ -99,7 +100,7 @@ impl GstreamerIcedPipewire {
                 self.play_status = PlayStatus::End;
             }
             GStreamerMessage::Ready(mut sender) => {
-                let rv = self.rv.take().unwrap();
+                let rv = self.rv.clone();
                 let _ = sender.try_send(rv);
             }
             _ => {}

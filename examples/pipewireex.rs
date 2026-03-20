@@ -65,7 +65,10 @@ impl GstreamerIcedProgram {
         let vframe = match &self.frame {
             Some(frame) => frame,
             None => {
-                return text("none").into();
+                return container(text("loading"))
+                    .center_y(Length::Fill)
+                    .center_x(Length::Fill)
+                    .into();
             }
         };
         let frame = vframe
