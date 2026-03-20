@@ -14,13 +14,7 @@ readme = "README.md"
 
 [dependencies]
 anyhow = "1.0.79"
-iced = { version = "0.14", features = [
-	"tokio",
-	"debug",
-	"image",
-	"advanced",
-	"svg",
-] }
+iced = { version = "0.14", features = ["image", "svg"] }
 gstreamer = "0.22.1"
 gstreamer-app = "0.22.0"
 
