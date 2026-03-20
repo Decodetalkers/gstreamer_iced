@@ -1,18 +1,18 @@
-use anyhow::anyhow;
 use ashpd::desktop::{
     screencast::{CursorMode, Screencast, SelectSourcesOptions, SourceType},
     PersistMode,
 };
-
 use iced::widget::container;
 use iced::widget::{button, column, image, text, Image};
 use iced::Length;
 use iced::Task;
+use std::os::fd::{AsRawFd, OwnedFd};
+use std::sync::Arc;
 
 static MEDIA_PLAYER: &[u8] = include_bytes!("../resource/popandpipi.jpg");
 use gstreamer_iced::*;
 
-async fn get_path() -> anyhow::Result<u32> {
+async fn get_path() -> ashpd::Result<(u32, Arc<OwnedFd>)> {
     let proxy = Screencast::new().await?;
     let session = proxy.create_session(Default::default()).await?;
     proxy
@@ -32,13 +32,18 @@ async fn get_path() -> anyhow::Result<u32> {
         .await?
         .response()?;
 
-    for stream in response.streams().iter() {
-        println!("node id: {}", stream.pipe_wire_node_id());
-        println!("size: {:?}", stream.size());
-        println!("position: {:?}", stream.position());
-        return Ok(stream.pipe_wire_node_id());
-    }
-    Err(anyhow!("Not get"))
+    let stream = response
+        .streams()
+        .first()
+        .expect("No stream found or selected")
+        .to_owned();
+    let path = stream.pipe_wire_node_id();
+
+    let fd = proxy
+        .open_pipe_wire_remote(&session, Default::default())
+        .await?;
+
+    Ok((path, Arc::new(fd)))
 }
 fn main() -> iced::Result {
     iced::application(
@@ -54,11 +59,12 @@ fn main() -> iced::Result {
 struct GstreamerIcedProgram {
     frame: Option<GstreamerIcedPipewire>,
     handle: image::Handle,
+    fd: Option<Arc<OwnedFd>>,
 }
 #[derive(Debug, Clone)]
 enum GStreamerIcedMessage {
     Gst(GStreamerMessage),
-    Ready(u32),
+    Ready((u32, Arc<OwnedFd>)),
 }
 
 impl GstreamerIcedProgram {
@@ -111,8 +117,9 @@ impl GstreamerIcedProgram {
                 Some(frame) => frame.update(message).map(GStreamerIcedMessage::Gst),
                 None => Task::none(),
             },
-            GStreamerIcedMessage::Ready(path) => {
-                self.frame = Some(GstreamerIced::new_pipewire(path).unwrap());
+            GStreamerIcedMessage::Ready((path, fd)) => {
+                self.fd = Some(fd.clone());
+                self.frame = Some(GstreamerIced::new_pipewire(path, fd.as_raw_fd()).unwrap());
                 Task::none()
             }
         }
@@ -134,6 +141,7 @@ impl GstreamerIcedProgram {
             Self {
                 frame: None,
                 handle: image::Handle::from_bytes(MEDIA_PLAYER),
+                fd: None,
             },
             iced::Task::perform(
                 async { get_path().await.unwrap() },

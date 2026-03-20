@@ -4,7 +4,10 @@ use gstreamer as gst;
 use gstreamer_app as gst_app;
 use iced::Task;
 use smol::lock::Mutex as AsyncMutex;
-use std::sync::{Arc, Mutex};
+use std::{
+    os::fd::RawFd,
+    sync::{Arc, Mutex},
+};
 
 use super::{FrameData, GStreamerMessage, GstreamerIced, IcedGStreamerError, PlayStatus};
 
@@ -13,16 +16,16 @@ pub type GstreamerIcedPipewire = GstreamerIced<1>;
 impl GstreamerIcedPipewire {
     /// Accept a pipewire stream, it accept a pipewire path, you may can get it from ashpd, it is
     /// called node.
-    pub fn new_pipewire(path: u32) -> Result<Self, IcedGStreamerError> {
+    pub fn new_pipewire(path: u32, fd: RawFd) -> Result<Self, IcedGStreamerError> {
         gst::init()?;
 
         let source = gst::Pipeline::new();
         let pipewiresrc = gst::ElementFactory::make("pipewiresrc")
+            .property("fd", fd)
             .property("path", path.to_string())
             .build()?;
 
         let videoconvert = gst::ElementFactory::make("videoconvert").build()?;
-        let videoscale = gst::ElementFactory::make("videoscale").build()?;
 
         let app_sink_caps = gst::Caps::builder("video/x-raw")
             .field("format", "RGBA")
@@ -62,9 +65,9 @@ impl GstreamerIcedPipewire {
         );
 
         let app_sink: gst::Element = app_sink.clone().into();
-        source.add_many([&pipewiresrc, &videoconvert, &videoscale, &app_sink])?;
+        source.add_many([&pipewiresrc, &videoconvert, &app_sink])?;
 
-        gst::Element::link_many([&pipewiresrc, &videoconvert, &videoscale, &app_sink])?;
+        gst::Element::link_many([&pipewiresrc, &videoconvert, &app_sink])?;
 
         source.set_state(gst::State::Playing)?;
 
