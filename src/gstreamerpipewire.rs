@@ -55,7 +55,7 @@ impl GstreamerIcedPipewire {
                         height: height as _,
                         pixels: map.as_slice().to_owned(),
                     });
-                    sd.try_send(GStreamerMessage::FrameUpdate).ok();
+                    sd.try_send(GStreamerMessage::Update).ok();
                     Ok(gst::FlowSuccess::Ok)
                 })
                 .build(),

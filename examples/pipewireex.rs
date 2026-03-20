@@ -53,6 +53,7 @@ fn main() -> iced::Result {
 
 struct GstreamerIcedProgram {
     frame: Option<GstreamerIcedPipewire>,
+    handle: image::Handle,
 }
 #[derive(Debug, Clone)]
 enum GStreamerIcedMessage {
@@ -98,6 +99,16 @@ impl GstreamerIcedProgram {
 
     fn update(&mut self, message: GStreamerIcedMessage) -> iced::Task<GStreamerIcedMessage> {
         match message {
+            GStreamerIcedMessage::Gst(GStreamerMessage::Update) => {
+                let Some(vframe) = &self.frame else {
+                    return Task::none();
+                };
+                let Some(handle) = vframe.frame_handle() else {
+                    return Task::none();
+                };
+                self.handle = handle;
+                Task::none()
+            }
             GStreamerIcedMessage::Gst(message) => match &mut self.frame {
                 Some(frame) => frame.update(message).map(GStreamerIcedMessage::Gst),
                 None => Task::none(),
@@ -122,7 +133,10 @@ impl GstreamerIcedProgram {
 
     fn new() -> (Self, iced::Task<GStreamerIcedMessage>) {
         (
-            Self { frame: None },
+            Self {
+                frame: None,
+                handle: image::Handle::from_bytes(MEDIA_PLAYER),
+            },
             iced::Task::perform(
                 async { get_path().await.unwrap() },
                 GStreamerIcedMessage::Ready,

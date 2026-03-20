@@ -119,7 +119,6 @@ impl From<u64> for Position {
 #[derive(Debug, Clone)]
 pub enum GStreamerMessage {
     Update,
-    FrameUpdate,
     PlayStatusChanged(PlayStatus),
     BusGoToEnd,
     Ready(Sender<Arc<AsyncMutex<Receiver<GStreamerMessage>>>>),
@@ -161,8 +160,6 @@ impl<const X: usize> GstreamerIced<X> {
         if self.is_playing() {
             let bus = self.bus.clone();
             iced::Subscription::batch([
-                iced::time::every(std::time::Duration::from_secs_f64(0.05))
-                    .map(|_| GStreamerMessage::Update),
                 iced::Subscription::run(|| {
                     iced::stream::channel(100, |mut output: Sender<GStreamerMessage>| async move {
                         let (sender, mut receiver) = mpsc::channel(100);
