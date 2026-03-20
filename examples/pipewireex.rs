@@ -1,34 +1,37 @@
 use anyhow::anyhow;
-use ashpd::{
-    desktop::screencast::{CursorMode, PersistMode, Screencast, SourceType},
-    WindowIdentifier,
+use ashpd::desktop::{
+    screencast::{CursorMode, Screencast, SelectSourcesOptions, SourceType},
+    PersistMode,
 };
 
+use iced::widget::container;
 use iced::widget::{button, column, image, text, Image};
-use iced::{executor, widget::container, Application, Theme};
-use iced::{Command, Element, Length, Settings};
+use iced::Length;
+use iced::Task;
 
 static MEDIA_PLAYER: &[u8] = include_bytes!("../resource/popandpipi.jpg");
 use gstreamer_iced::*;
 
 async fn get_path() -> anyhow::Result<u32> {
     let proxy = Screencast::new().await?;
-    let session = proxy.create_session().await?;
+    let session = proxy.create_session(Default::default()).await?;
     proxy
         .select_sources(
             &session,
-            CursorMode::Hidden,
-            SourceType::Monitor | SourceType::Window,
-            true,
-            None,
-            PersistMode::DoNot,
+            SelectSourcesOptions::default()
+                .set_cursor_mode(CursorMode::Embedded)
+                .set_sources(SourceType::Monitor | SourceType::Window | SourceType::Virtual)
+                .set_multiple(false)
+                .set_restore_token(None)
+                .set_persist_mode(PersistMode::DoNot),
         )
         .await?;
 
     let response = proxy
-        .start(&session, &WindowIdentifier::default())
+        .start(&session, None, Default::default())
         .await?
         .response()?;
+
     for stream in response.streams().iter() {
         println!("node id: {}", stream.pipe_wire_node_id());
         println!("size: {:?}", stream.size());
@@ -37,81 +40,90 @@ async fn get_path() -> anyhow::Result<u32> {
     }
     Err(anyhow!("Not get"))
 }
-#[tokio::main]
-async fn main() -> iced::Result {
-    let path = get_path().await.unwrap();
-    GstreamerIcedProgram::run(Settings {
-        flags: InitFlage { path },
-        ..Settings::default()
-    })
-}
-
-#[derive(Debug, Default)]
-struct InitFlage {
-    path: u32,
+fn main() -> iced::Result {
+    iced::application(
+        GstreamerIcedProgram::new,
+        GstreamerIcedProgram::update,
+        GstreamerIcedProgram::view,
+    )
+    .title(GstreamerIcedProgram::title)
+    .subscription(GstreamerIcedProgram::subscription)
+    .run()
 }
 
 struct GstreamerIcedProgram {
-    frame: GstreamerIcedPipewire,
+    frame: Option<GstreamerIcedPipewire>,
 }
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 enum GStreamerIcedMessage {
     Gst(GStreamerMessage),
+    Ready(u32),
 }
 
-#[derive(Debug, Clone, Copy)]
-struct GstreamerUpdate;
-
-impl Application for GstreamerIcedProgram {
-    type Theme = Theme;
-    type Flags = InitFlage;
-    type Executor = executor::Default;
-    type Message = GStreamerIcedMessage;
-
-    fn view(&self) -> iced::Element<Self::Message> {
-        let frame = self
-            .frame
+impl GstreamerIcedProgram {
+    fn view(&'_ self) -> iced::Element<'_, GStreamerIcedMessage> {
+        let vframe = match &self.frame {
+            Some(frame) => frame,
+            None => {
+                return text("none").into();
+            }
+        };
+        let frame = vframe
             .frame_handle()
-            .unwrap_or(image::Handle::from_memory(MEDIA_PLAYER));
+            .unwrap_or(image::Handle::from_bytes(MEDIA_PLAYER));
 
-        let btn: Element<Self::Message> = match self.frame.play_status() {
+        let btn = match vframe.play_status() {
             PlayStatus::Stop | PlayStatus::End => button(text("|>")).on_press(
                 GStreamerIcedMessage::Gst(GStreamerMessage::PlayStatusChanged(PlayStatus::Playing)),
             ),
             PlayStatus::Playing => button(text("[]")).on_press(GStreamerIcedMessage::Gst(
                 GStreamerMessage::PlayStatusChanged(PlayStatus::Stop),
             )),
-        }
-        .into();
+        };
         let video = Image::new(frame).width(Length::Fill);
 
         container(column![
             video,
-            container(btn).width(Length::Fill).center_x()
+            container(btn).width(Length::Fill).center_x(Length::Fill)
         ])
         .width(Length::Fill)
         .height(Length::Fill)
-        .center_x()
-        .center_y()
+        .center_x(Length::Fill)
+        .center_y(Length::Fill)
         .into()
     }
 
-    fn update(&mut self, message: Self::Message) -> iced::Command<Self::Message> {
-        let GStreamerIcedMessage::Gst(message) = message;
-        self.frame.update(message).map(GStreamerIcedMessage::Gst)
+    fn update(&mut self, message: GStreamerIcedMessage) -> iced::Task<GStreamerIcedMessage> {
+        match message {
+            GStreamerIcedMessage::Gst(message) => match &mut self.frame {
+                Some(frame) => frame.update(message).map(GStreamerIcedMessage::Gst),
+                None => Task::none(),
+            },
+            GStreamerIcedMessage::Ready(path) => {
+                self.frame = Some(GstreamerIced::new_pipewire(path).unwrap());
+                Task::none()
+            }
+        }
     }
 
     fn title(&self) -> String {
         "Iced Gstreamer".to_string()
     }
 
-    fn subscription(&self) -> iced::Subscription<Self::Message> {
-        self.frame.subscription().map(GStreamerIcedMessage::Gst)
+    fn subscription(&self) -> iced::Subscription<GStreamerIcedMessage> {
+        match &self.frame {
+            Some(frame) => frame.subscription().map(GStreamerIcedMessage::Gst),
+            None => iced::Subscription::none(),
+        }
     }
 
-    fn new(flags: Self::Flags) -> (Self, Command<Self::Message>) {
-        let frame = GstreamerIced::new_pipewire(flags.path).unwrap();
-
-        (Self { frame }, Command::none())
+    fn new() -> (Self, iced::Task<GStreamerIcedMessage>) {
+        (
+            Self { frame: None },
+            iced::Task::perform(
+                async { get_path().await.unwrap() },
+                GStreamerIcedMessage::Ready,
+            ),
+        )
     }
 }

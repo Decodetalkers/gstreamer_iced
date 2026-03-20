@@ -9,15 +9,15 @@ use gstreamer as gst;
 use iced::futures::SinkExt;
 use iced::futures::StreamExt;
 use iced::widget::image;
-use smol::lock::Mutex as AsyncMutex;
+use mpsc::{Receiver, Sender};
+use std::hash::Hash;
 use std::sync::{Arc, Mutex};
 use thiserror::Error;
-
 pub mod reexport {
     pub use url;
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Hash)]
 pub enum PlayStatus {
     Stop,
     Playing,
@@ -39,7 +39,7 @@ impl From<FrameData> for image::Handle {
             height,
         }: FrameData,
     ) -> Self {
-        image::Handle::from_pixels(width, height, pixels)
+        image::Handle::from_rgba(width, height, pixels)
     }
 }
 
@@ -53,7 +53,7 @@ pub struct GstreamerIced<const X: usize> {
     bus: gst::Bus,
     source: gst::Bin,
     play_status: PlayStatus,
-    rv: Arc<AsyncMutex<mpsc::Receiver<GStreamerMessage>>>,
+    rv: Option<mpsc::Receiver<GStreamerMessage>>,
     duration: std::time::Duration,
     position: std::time::Duration,
     info_get_started: bool,
@@ -115,12 +115,13 @@ impl From<u64> for Position {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum GStreamerMessage {
     Update,
     FrameUpdate,
     PlayStatusChanged(PlayStatus),
     BusGoToEnd,
+    Ready(Sender<Receiver<GStreamerMessage>>),
 }
 
 impl<const X: usize> Drop for GstreamerIced<X> {
@@ -157,29 +158,28 @@ impl<const X: usize> GstreamerIced<X> {
     /// get the subscription, you can use in iced::subscription
     pub fn subscription(&self) -> iced::Subscription<GStreamerMessage> {
         if self.is_playing() {
-            let rv = self.rv.clone();
             let bus = self.bus.clone();
-            struct BusWatcher;
             iced::Subscription::batch([
                 iced::time::every(std::time::Duration::from_secs_f64(0.05))
                     .map(|_| GStreamerMessage::Update),
-                iced::subscription::channel(
-                    std::any::TypeId::of::<()>(),
-                    100,
-                    |mut output| async move {
-                        let mut rv = rv.lock().await;
+                iced::Subscription::run(|| {
+                    iced::stream::channel(100, |mut output: Sender<GStreamerMessage>| async move {
+                        let (sender, mut receiver) = mpsc::channel(100);
+                        let _ = output.send(GStreamerMessage::Ready(sender)).await;
+                        let Some(mut rv) = receiver.next().await else {
+                            return;
+                        };
                         loop {
                             let Some(message) = rv.next().await else {
                                 continue;
                             };
                             let _ = output.send(message).await;
                         }
-                    },
-                ),
-                iced::subscription::channel(
-                    std::any::TypeId::of::<BusWatcher>(),
-                    100,
-                    |mut output| async move {
+                    })
+                }),
+                iced::Subscription::run_with(bus, |bus| {
+                    let bus = bus.clone();
+                    iced::stream::channel(100, |mut output: Sender<GStreamerMessage>| async move {
                         let mut thebus = bus.stream();
                         while let Some(view) = thebus.next().await {
                             match view.view() {
@@ -190,15 +190,8 @@ impl<const X: usize> GstreamerIced<X> {
                                 _ => {}
                             }
                         }
-                        loop {
-                            // DO NOTHING here
-                            futures_time::task::sleep(futures_time::time::Duration::from_millis(
-                                10,
-                            ))
-                            .await;
-                        }
-                    },
-                ),
+                    })
+                }),
             ])
         } else {
             iced::Subscription::none()

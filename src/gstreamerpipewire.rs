@@ -2,8 +2,7 @@ use futures::channel::mpsc;
 use gst::prelude::*;
 use gstreamer as gst;
 use gstreamer_app as gst_app;
-use iced::Command;
-use smol::lock::Mutex as AsyncMutex;
+use iced::Task;
 use std::sync::{Arc, Mutex};
 
 use super::{FrameData, GStreamerMessage, GstreamerIced, IcedGStreamerError, PlayStatus};
@@ -61,7 +60,7 @@ impl GstreamerIcedPipewire {
                 .build(),
         );
 
-        let app_sink: gst::Element = app_sink.into();
+        let app_sink: gst::Element = app_sink.clone().into();
         source.add_many([&pipewiresrc, &videoconvert, &videoscale, &app_sink])?;
 
         gst::Element::link_many([&pipewiresrc, &videoconvert, &videoscale, &app_sink])?;
@@ -73,7 +72,7 @@ impl GstreamerIcedPipewire {
             bus: source.bus().unwrap(),
             source: source.into(),
             play_status: PlayStatus::Playing,
-            rv: Arc::new(AsyncMutex::new(rv)),
+            rv: Some(rv),
             duration: std::time::Duration::from_nanos(0),
             position: std::time::Duration::from_nanos(0),
             info_get_started: true,
@@ -82,7 +81,7 @@ impl GstreamerIcedPipewire {
     }
 
     /// update for pipewire
-    pub fn update(&mut self, message: GStreamerMessage) -> iced::Command<GStreamerMessage> {
+    pub fn update(&mut self, message: GStreamerMessage) -> iced::Task<GStreamerMessage> {
         match message {
             GStreamerMessage::PlayStatusChanged(status) => {
                 match status {
@@ -99,8 +98,12 @@ impl GstreamerIcedPipewire {
             GStreamerMessage::BusGoToEnd => {
                 self.play_status = PlayStatus::End;
             }
+            GStreamerMessage::Ready(mut sender) => {
+                let rv = self.rv.take().unwrap();
+                let _ = sender.try_send(rv);
+            }
             _ => {}
         }
-        Command::none()
+        Task::none()
     }
 }

@@ -1,62 +1,45 @@
+use iced::widget::container;
 use iced::widget::{button, column, image, row, slider, text, Image};
-use iced::{executor, widget::container, Application, Theme};
-use iced::{Command, Element, Length, Settings};
+use iced::{Element, Length};
 
 use gstreamer_iced::*;
 
 static MEDIA_PLAYER: &[u8] = include_bytes!("../resource/popandpipi.jpg");
 
-#[derive(Debug, Default)]
-struct InitFlage {
-    url: Option<url::Url>,
-}
-
 fn main() -> iced::Result {
-    GstreamerIcedProgram::run(Settings {
-        flags: InitFlage {
-            url: Some(
-                url::Url::parse(
-                    //"http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4",
-                    "https://gstreamer.freedesktop.org/data/media/sintel_trailer-480p.webm",
-                )
-                .unwrap(),
-            ),
-        },
-        ..Settings::default()
-    })
+    iced::application(
+        GstreamerIcedProgram::new,
+        GstreamerIcedProgram::update,
+        GstreamerIcedProgram::view,
+    )
+    .title(GstreamerIcedProgram::title)
+    .subscription(GstreamerIcedProgram::subscription)
+    .run()
 }
 
 #[derive(Debug)]
 struct GstreamerIcedProgram {
     frame: GstreamerIcedBase,
 }
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 enum GStreamerIcedMessage {
     Gst(GStreamerMessage),
     Jump(u8),
     VolChange(f64),
 }
 
-#[derive(Debug, Clone, Copy)]
-struct GstreamerUpdate;
-
-impl Application for GstreamerIcedProgram {
-    type Theme = Theme;
-    type Flags = InitFlage;
-    type Executor = executor::Default;
-    type Message = GStreamerIcedMessage;
-
-    fn view(&self) -> iced::Element<Self::Message> {
+impl GstreamerIcedProgram {
+    fn view(&'_ self) -> iced::Element<'_, GStreamerIcedMessage> {
         let frame = self
             .frame
             .frame_handle()
-            .unwrap_or(image::Handle::from_memory(MEDIA_PLAYER));
+            .unwrap_or(image::Handle::from_bytes(MEDIA_PLAYER));
         let fullduration = self.frame.duration_seconds();
         let current_pos = self.frame.position_seconds();
         let duration = (fullduration / 8.0) as u8;
         let pos = (current_pos / 8.0) as u8;
 
-        let btn: Element<Self::Message> = match self.frame.play_status() {
+        let btn: Element<GStreamerIcedMessage> = match self.frame.play_status() {
             PlayStatus::Stop | PlayStatus::End => button(text("|>")).on_press(
                 GStreamerIcedMessage::Gst(GStreamerMessage::PlayStatusChanged(PlayStatus::Playing)),
             ),
@@ -84,16 +67,16 @@ impl Application for GstreamerIcedProgram {
         container(column![
             video,
             duration_component,
-            container(btn).width(Length::Fill).center_x()
+            container(btn).width(Length::Fill).center_x(Length::Fill)
         ])
         .width(Length::Fill)
         .height(Length::Fill)
-        .center_x()
-        .center_y()
+        .center_x(Length::Fill)
+        .center_y(Length::Fill)
         .into()
     }
 
-    fn update(&mut self, message: Self::Message) -> iced::Command<Self::Message> {
+    fn update(&mut self, message: GStreamerIcedMessage) -> iced::Task<GStreamerIcedMessage> {
         match message {
             GStreamerIcedMessage::Gst(message) => {
                 self.frame.update(message).map(GStreamerIcedMessage::Gst)
@@ -102,10 +85,7 @@ impl Application for GstreamerIcedProgram {
                 self.frame
                     .seek(std::time::Duration::from_secs(step as u64 * 8))
                     .unwrap();
-                Command::perform(
-                    async { GStreamerMessage::Update },
-                    GStreamerIcedMessage::Gst,
-                )
+                iced::Task::done(GStreamerIcedMessage::Gst(GStreamerMessage::Update))
             }
             GStreamerIcedMessage::VolChange(vol) => {
                 let currentvol = self.frame.volume();
@@ -113,10 +93,7 @@ impl Application for GstreamerIcedProgram {
                 if newvol >= 0.0 {
                     self.frame.set_volume(newvol);
                 }
-                Command::perform(
-                    async { GStreamerMessage::Update },
-                    GStreamerIcedMessage::Gst,
-                )
+                iced::Task::done(GStreamerIcedMessage::Gst(GStreamerMessage::Update))
             }
         }
     }
@@ -125,13 +102,18 @@ impl Application for GstreamerIcedProgram {
         "Iced Gstreamer".to_string()
     }
 
-    fn subscription(&self) -> iced::Subscription<Self::Message> {
+    fn subscription(&self) -> iced::Subscription<GStreamerIcedMessage> {
         self.frame.subscription().map(GStreamerIcedMessage::Gst)
     }
 
-    fn new(flags: Self::Flags) -> (Self, Command<Self::Message>) {
-        let frame = GstreamerIced::new_url(flags.url.as_ref().unwrap(), false).unwrap();
+    fn new() -> Self {
+        let url = url::Url::parse(
+            //"http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4",
+            "https://gstreamer.freedesktop.org/data/media/sintel_trailer-480p.webm",
+        )
+        .unwrap();
+        let frame = GstreamerIced::new_url(&url, false).unwrap();
 
-        (Self { frame }, Command::none())
+        Self { frame }
     }
 }

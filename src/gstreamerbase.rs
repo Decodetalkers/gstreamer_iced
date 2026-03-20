@@ -3,8 +3,7 @@ use gst::prelude::*;
 use gst::GenericFormattedValue;
 use gstreamer as gst;
 use gstreamer_app as gst_app;
-use iced::Command;
-use smol::lock::Mutex as AsyncMutex;
+use iced::Task;
 use std::sync::{Arc, Mutex};
 
 use super::{FrameData, GStreamerMessage, GstreamerIced, IcedGStreamerError, PlayStatus, Position};
@@ -17,8 +16,8 @@ impl GstreamerIcedBase {
         T: Into<Position>,
     {
         let pos: Position = position.into();
-        let positon: GenericFormattedValue = pos.into();
-        self.source.seek_simple(gst::SeekFlags::FLUSH, positon)?;
+        let position: GenericFormattedValue = pos.into();
+        self.source.seek_simple(gst::SeekFlags::FLUSH, position)?;
 
         if let PlayStatus::End = self.play_status {
             self.play_status = PlayStatus::Playing;
@@ -94,7 +93,7 @@ impl GstreamerIcedBase {
             bus: source.bus().unwrap(),
             source,
             play_status: PlayStatus::Stop,
-            rv: Arc::new(AsyncMutex::new(rv)),
+            rv: Some(rv),
             duration: std::time::Duration::from_nanos(0),
             position: std::time::Duration::from_nanos(0),
             info_get_started: !islive,
@@ -103,13 +102,12 @@ impl GstreamerIcedBase {
     }
 
     // update for gstreamer base
-    pub fn update(&mut self, message: GStreamerMessage) -> iced::Command<GStreamerMessage> {
+    pub fn update(&mut self, message: GStreamerMessage) -> iced::Task<GStreamerMessage> {
         match message {
             GStreamerMessage::Update => {
                 // get the info in the first time of dispatch
                 if self.info_get_started {
                     loop {
-                        // FIXME: move it to stream listener
                         self.source
                             .state(gst::ClockTime::from_seconds(5))
                             .0
@@ -152,9 +150,13 @@ impl GstreamerIcedBase {
             GStreamerMessage::BusGoToEnd => {
                 self.play_status = PlayStatus::End;
             }
+            GStreamerMessage::Ready(mut sender) => {
+                let rv = self.rv.take().unwrap();
+                let _ = sender.try_send(rv);
+            }
             _ => {}
         }
-        Command::none()
+        Task::none()
     }
 
     /// get the volume of the video
