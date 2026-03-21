@@ -78,7 +78,6 @@ impl GstreamerIcedProgram {
                     .into();
             }
         };
-        let frame = self.handle.clone();
 
         let btn = match vframe.play_status() {
             PlayStatus::Stop | PlayStatus::End => button(text("|>")).on_press(
@@ -88,7 +87,7 @@ impl GstreamerIcedProgram {
                 GStreamerMessage::PlayStatusChanged(PlayStatus::Stop),
             )),
         };
-        let video = Image::new(frame).width(Length::Fill);
+        let video = Image::new(&self.handle).width(Length::Fill);
 
         container(column![
             video,
