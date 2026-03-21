@@ -2,7 +2,7 @@ use futures::channel::mpsc;
 use gst::prelude::*;
 use gstreamer as gst;
 use gstreamer_app as gst_app;
-use iced::Task;
+use iced_runtime::Task;
 use smol::lock::Mutex as AsyncMutex;
 use std::{
     os::fd::RawFd,
@@ -85,7 +85,7 @@ impl GVideoPipewire {
     }
 
     /// update for pipewire
-    pub fn update(&mut self, message: GStreamerMessage) -> iced::Task<GStreamerMessage> {
+    pub fn update(&mut self, message: GStreamerMessage) -> Task<GStreamerMessage> {
         match message {
             GStreamerMessage::PlayStatusChanged(status) => {
                 match status {

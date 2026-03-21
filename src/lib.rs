@@ -1,14 +1,15 @@
-mod gstreamer_playbin;
 mod gstreamer_pipewire;
+mod gstreamer_playbin;
+mod video_player;
 
 use futures::channel::mpsc;
 use gst::glib;
 use gst::prelude::*;
 use gst::GenericFormattedValue;
 use gstreamer as gst;
-use iced::futures::SinkExt;
-use iced::futures::StreamExt;
-use iced::widget::image;
+use iced_futures::futures::SinkExt;
+use iced_futures::futures::StreamExt;
+use iced_widget::image;
 use mpsc::{Receiver, Sender};
 use smol::lock::Mutex as AsyncMutex;
 use std::hash::Hash;
@@ -17,6 +18,7 @@ use thiserror::Error;
 pub mod reexport {
     pub use url;
 }
+pub use video_player::VideoPlayer;
 
 #[derive(Debug, Clone, Copy, Hash)]
 pub enum PlayStatus {
@@ -156,44 +158,50 @@ impl<const X: usize> GVideo<X> {
     }
 
     /// get the subscription, you can use in iced::subscription
-    pub fn subscription(&self) -> iced::Subscription<GStreamerMessage> {
+    pub fn subscription(&self) -> iced_futures::Subscription<GStreamerMessage> {
         if self.is_playing() {
             let bus = self.bus.clone();
-            iced::Subscription::batch([
-                iced::Subscription::run(|| {
-                    iced::stream::channel(100, |mut output: Sender<GStreamerMessage>| async move {
-                        let (sender, mut receiver) = mpsc::channel(100);
-                        let _ = output.send(GStreamerMessage::Ready(sender)).await;
-                        let Some(rv) = receiver.next().await else {
-                            return;
-                        };
-                        let mut rv = rv.lock().await;
-                        loop {
-                            let Some(message) = rv.next().await else {
-                                continue;
+            iced_futures::Subscription::batch([
+                iced_futures::Subscription::run(|| {
+                    iced_futures::stream::channel(
+                        100,
+                        |mut output: Sender<GStreamerMessage>| async move {
+                            let (sender, mut receiver) = mpsc::channel(100);
+                            let _ = output.send(GStreamerMessage::Ready(sender)).await;
+                            let Some(rv) = receiver.next().await else {
+                                return;
                             };
-                            let _ = output.send(message).await;
-                        }
-                    })
-                }),
-                iced::Subscription::run_with(bus, |bus| {
-                    let bus = bus.clone();
-                    iced::stream::channel(100, |mut output: Sender<GStreamerMessage>| async move {
-                        let mut thebus = bus.stream();
-                        while let Some(view) = thebus.next().await {
-                            match view.view() {
-                                gst::MessageView::Error(err) => panic!("{:#?}", err),
-                                gst::MessageView::Eos(_eos) => {
-                                    let _ = output.send(GStreamerMessage::BusGoToEnd).await;
-                                }
-                                _ => {}
+                            let mut rv = rv.lock().await;
+                            loop {
+                                let Some(message) = rv.next().await else {
+                                    continue;
+                                };
+                                let _ = output.send(message).await;
                             }
-                        }
-                    })
+                        },
+                    )
+                }),
+                iced_futures::Subscription::run_with(bus, |bus| {
+                    let bus = bus.clone();
+                    iced_futures::stream::channel(
+                        100,
+                        |mut output: Sender<GStreamerMessage>| async move {
+                            let mut thebus = bus.stream();
+                            while let Some(view) = thebus.next().await {
+                                match view.view() {
+                                    gst::MessageView::Error(err) => panic!("{:#?}", err),
+                                    gst::MessageView::Eos(_eos) => {
+                                        let _ = output.send(GStreamerMessage::BusGoToEnd).await;
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        },
+                    )
                 }),
             ])
         } else {
-            iced::Subscription::none()
+            iced_futures::Subscription::none()
         }
     }
 

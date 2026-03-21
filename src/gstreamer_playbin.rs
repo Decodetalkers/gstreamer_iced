@@ -3,7 +3,7 @@ use gst::prelude::*;
 use gst::GenericFormattedValue;
 use gstreamer as gst;
 use gstreamer_app as gst_app;
-use iced::Task;
+use iced_runtime::Task;
 use smol::lock::Mutex as AsyncMutex;
 use std::sync::{Arc, Mutex};
 
@@ -103,7 +103,7 @@ impl GVideoUrl {
     }
 
     // update for gstreamer base
-    pub fn update(&mut self, message: GStreamerMessage) -> iced::Task<GStreamerMessage> {
+    pub fn update(&mut self, message: GStreamerMessage) -> Task<GStreamerMessage> {
         match message {
             GStreamerMessage::Update => {
                 // get the info in the first time of dispatch
