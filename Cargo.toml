@@ -13,19 +13,19 @@ readme = "README.md"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "1.0.79"
+anyhow = "1.0.102"
 iced = { version = "0.14", features = ["image", "svg"] }
-gstreamer = "0.22.1"
-gstreamer-app = "0.22.0"
+gstreamer = "0.25.1"
+gstreamer-app = "0.25.0"
 
-url = "2.5.0"
-smol = "2.0.0"
-thiserror = "1.0.57"
-futures = "0.3.30"
-futures-time = "3.0.0"
+url = "2.5.8"
+smol = "2.0.2"
+thiserror = "2.0.18"
+futures = "0.3.32"
+futures-time = "3.0.1"
 
 [dev-dependencies]
-tokio = { version = "1.36", features = ["full"] }
+tokio = { version = "1.50", features = ["full"] }
 iced = { version = "0.14", features = [
 	"tokio",
 	"debug",
