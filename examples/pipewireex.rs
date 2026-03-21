@@ -46,18 +46,14 @@ async fn get_path() -> ashpd::Result<(u32, Arc<OwnedFd>)> {
     Ok((path, Arc::new(fd)))
 }
 fn main() -> iced::Result {
-    iced::application(
-        GstreamerIcedProgram::new,
-        GstreamerIcedProgram::update,
-        GstreamerIcedProgram::view,
-    )
-    .title(GstreamerIcedProgram::title)
-    .subscription(GstreamerIcedProgram::subscription)
-    .run()
+    iced::application(GProgram::new, GProgram::update, GProgram::view)
+        .title(GProgram::title)
+        .subscription(GProgram::subscription)
+        .run()
 }
 
-struct GstreamerIcedProgram {
-    frame: Option<GstreamerIcedPipewire>,
+struct GProgram {
+    frame: Option<GVideoPipewire>,
     handle: image::Handle,
     fd: Option<Arc<OwnedFd>>,
 }
@@ -67,7 +63,7 @@ enum GStreamerIcedMessage {
     Ready((u32, Arc<OwnedFd>)),
 }
 
-impl GstreamerIcedProgram {
+impl GProgram {
     fn view(&'_ self) -> iced::Element<'_, GStreamerIcedMessage> {
         let vframe = match &self.frame {
             Some(frame) => frame,
@@ -118,7 +114,7 @@ impl GstreamerIcedProgram {
             },
             GStreamerIcedMessage::Ready((path, fd)) => {
                 self.fd = Some(fd.clone());
-                self.frame = Some(GstreamerIced::new_pipewire(path, fd.as_raw_fd()).unwrap());
+                self.frame = Some(GVideo::new_pipewire(path, fd.as_raw_fd()).unwrap());
                 Task::none()
             }
         }

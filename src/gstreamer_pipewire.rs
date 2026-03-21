@@ -9,11 +9,11 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use super::{FrameData, GStreamerMessage, GstreamerIced, IcedGStreamerError, PlayStatus};
+use super::{FrameData, GStreamerMessage, GVideo, IcedGStreamerError, PlayStatus};
 
-pub type GstreamerIcedPipewire = GstreamerIced<1>;
+pub type GVideoPipewire = GVideo<1>;
 
-impl GstreamerIcedPipewire {
+impl GVideoPipewire {
     /// Accept a pipewire stream, it accept a pipewire path, you may can get it from ashpd, it is
     /// called node.
     pub fn new_pipewire(path: u32, fd: RawFd) -> Result<Self, IcedGStreamerError> {

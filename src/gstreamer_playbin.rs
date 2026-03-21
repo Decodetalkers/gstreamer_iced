@@ -7,11 +7,11 @@ use iced::Task;
 use smol::lock::Mutex as AsyncMutex;
 use std::sync::{Arc, Mutex};
 
-use super::{FrameData, GStreamerMessage, GstreamerIced, IcedGStreamerError, PlayStatus, Position};
+use super::{FrameData, GStreamerMessage, GVideo, IcedGStreamerError, PlayStatus, Position};
 
-pub type GstreamerIcedBase = GstreamerIced<0>;
+pub type GVideoUrl = GVideo<0>;
 
-impl GstreamerIcedBase {
+impl GVideoUrl {
     pub fn seek<T>(&mut self, position: T) -> Result<(), IcedGStreamerError>
     where
         T: Into<Position>,

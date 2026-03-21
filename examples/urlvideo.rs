@@ -8,18 +8,18 @@ static MEDIA_PLAYER: &[u8] = include_bytes!("../resource/popandpipi.jpg");
 
 fn main() -> iced::Result {
     iced::application(
-        GstreamerIcedProgram::new,
-        GstreamerIcedProgram::update,
-        GstreamerIcedProgram::view,
+        GProgram::new,
+        GProgram::update,
+        GProgram::view,
     )
-    .title(GstreamerIcedProgram::title)
-    .subscription(GstreamerIcedProgram::subscription)
+    .title(GProgram::title)
+    .subscription(GProgram::subscription)
     .run()
 }
 
 #[derive(Debug)]
-struct GstreamerIcedProgram {
-    frame: GstreamerIcedBase,
+struct GProgram {
+    frame: GVideoUrl,
 }
 #[derive(Debug, Clone)]
 enum GStreamerIcedMessage {
@@ -28,7 +28,7 @@ enum GStreamerIcedMessage {
     VolChange(f64),
 }
 
-impl GstreamerIcedProgram {
+impl GProgram {
     fn view(&'_ self) -> iced::Element<'_, GStreamerIcedMessage> {
         let frame = self
             .frame
@@ -112,7 +112,7 @@ impl GstreamerIcedProgram {
             "https://gstreamer.freedesktop.org/data/media/sintel_trailer-480p.webm",
         )
         .unwrap();
-        let frame = GstreamerIced::new_url(&url, false).unwrap();
+        let frame = GVideo::new_url(&url, false).unwrap();
 
         Self { frame }
     }

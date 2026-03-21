@@ -1,5 +1,5 @@
-mod gstreamerbase;
-mod gstreamerpipewire;
+mod gstreamer_playbin;
+mod gstreamer_pipewire;
 
 use futures::channel::mpsc;
 use gst::glib;
@@ -44,12 +44,12 @@ impl From<FrameData> for image::Handle {
     }
 }
 
-pub use gstreamerbase::GstreamerIcedBase;
+pub use gstreamer_playbin::GVideoUrl;
 
-pub use gstreamerpipewire::GstreamerIcedPipewire;
+pub use gstreamer_pipewire::GVideoPipewire;
 
 #[derive(Debug)]
-pub struct GstreamerIced<const X: usize> {
+pub struct GVideo<const X: usize> {
     frame: Arc<Mutex<Option<FrameData>>>, //pipeline: gst::Pipeline,
     bus: gst::Bus,
     source: gst::Bin,
@@ -124,7 +124,7 @@ pub enum GStreamerMessage {
     Ready(Sender<Arc<AsyncMutex<Receiver<GStreamerMessage>>>>),
 }
 
-impl<const X: usize> Drop for GstreamerIced<X> {
+impl<const X: usize> Drop for GVideo<X> {
     fn drop(&mut self) {
         self.source
             .set_state(gst::State::Null)
@@ -132,7 +132,7 @@ impl<const X: usize> Drop for GstreamerIced<X> {
     }
 }
 
-impl<const X: usize> GstreamerIced<X> {
+impl<const X: usize> GVideo<X> {
     /// return an [image::Handle], you can use it to make image
     pub fn frame_handle(&self) -> Option<image::Handle> {
         self.frame
