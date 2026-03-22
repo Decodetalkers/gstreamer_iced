@@ -183,7 +183,7 @@ impl VideoPipeline {
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::R8Unorm,
+                format: wgpu::TextureFormat::Rgba8Unorm,
                 usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
                 view_formats: &[],
             });
@@ -198,7 +198,7 @@ impl VideoPipeline {
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Rg8Unorm,
+                format: wgpu::TextureFormat::Rgba8Unorm,
                 usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
                 view_formats: &[],
             });
@@ -273,11 +273,7 @@ impl VideoPipeline {
             });
         }
 
-        let VideoEntry {
-            texture_y,
-            texture_uv,
-            ..
-        } = self.videos.get(&video_id).unwrap();
+        let VideoEntry { texture_y, .. } = self.videos.get(&video_id).unwrap();
 
         queue.write_texture(
             wgpu::TexelCopyTextureInfo {
@@ -295,26 +291,6 @@ impl VideoPipeline {
             wgpu::Extent3d {
                 width,
                 height,
-                depth_or_array_layers: 1,
-            },
-        );
-
-        queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: texture_uv,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            &frame[(stride * height) as usize..],
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(stride),
-                rows_per_image: Some(height / 2),
-            },
-            wgpu::Extent3d {
-                width: width / 2,
-                height: height / 2,
                 depth_or_array_layers: 1,
             },
         );

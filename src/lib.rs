@@ -28,7 +28,7 @@ pub struct FrameData {
 
 impl FrameData {
     fn stride(&self) -> u32 {
-        self.width
+        self.width * 4
     }
     fn data(&self) -> &[u8] {
         &self.pixels
