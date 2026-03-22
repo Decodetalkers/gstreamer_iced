@@ -2,7 +2,8 @@ use gst::prelude::*;
 use gst::GenericFormattedValue;
 use gstreamer as gst;
 use gstreamer_app as gst_app;
-use std::sync::{Arc, RwLock};
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex, RwLock};
 
 use super::{FrameData, GVideo, IcedGStreamerError, Position};
 
@@ -25,16 +26,16 @@ impl GVideoUrl {
         gst::init()?;
 
         let video_sink = gst::Bin::new();
-        let videoconvert = gst::ElementFactory::make("videoconvert").build()?;
         let videoscale = gst::ElementFactory::make("videoscale").build()?;
+        let videoconvert = gst::ElementFactory::make("videoconvert").build()?;
 
         let app_sink_caps = gst::Caps::builder("video/x-raw")
-            .field("format", "RGBA")
+            .field("format", "NV12")
             .field("pixel-aspect-ratio", gst::Fraction::new(1, 1))
             .build();
 
         let app_sink: gst_app::AppSink = gst_app::AppSink::builder()
-            .name("app_sink")
+            .name("my_sink")
             .caps(&app_sink_caps)
             .build();
 
@@ -43,6 +44,10 @@ impl GVideoUrl {
         ));
         let state_c = state.clone();
 
+        let upload_frame = Arc::new(AtomicBool::new(false));
+        let upload_frame_i = upload_frame.clone();
+        let frame = Arc::new(Mutex::new(None));
+        let frame_i = frame.clone();
         app_sink.set_callbacks(
             gst_app::AppSinkCallbacks::builder()
                 .new_sample(move |sink| {
@@ -56,12 +61,15 @@ impl GVideoUrl {
                     let height = s.get::<i32>("height").map_err(|_| gst::FlowError::Error)?;
                     let mut state = state_c.write().map_err(|_| gst::FlowError::Error)?;
 
-                    state.frame = Some(FrameData {
+                    upload_frame_i.store(true, std::sync::atomic::Ordering::SeqCst);
+                    let data = FrameData {
                         width: width as _,
                         height: height as _,
                         pixels: map.as_slice().to_owned(),
-                    });
-                    state.handle = state.frame.clone().map(|f| f.into());
+                    };
+                    state.handle = Some(data.clone().into());
+                    *frame_i.lock().map_err(|_| gst::FlowError::Eos)? = Some(data);
+
                     Ok(gst::FlowSuccess::Ok)
                 })
                 .build(),
@@ -69,10 +77,10 @@ impl GVideoUrl {
 
         let app_sink: gst::Element = app_sink.into();
 
-        video_sink.add_many([&videoconvert, &videoscale, &app_sink])?;
-        gst::Element::link_many([&videoconvert, &videoscale, &app_sink])?;
+        video_sink.add_many([&videoscale, &videoconvert, &app_sink])?;
+        gst::Element::link_many([&videoscale, &videoconvert, &app_sink])?;
 
-        let staticpad = videoconvert.static_pad("sink").unwrap();
+        let staticpad = videoscale.static_pad("sink").unwrap();
         let sinkgost = gst::GhostPad::builder_with_target(&staticpad)?.build();
         sinkgost.set_active(true)?;
         video_sink.add_pad(&sinkgost)?;
@@ -88,6 +96,10 @@ impl GVideoUrl {
             bus: source.bus().unwrap(),
             source,
             state,
+            upload_frame,
+            frame,
+            alive: Arc::new(AtomicBool::new(true)),
+            id: crate::id::Id::unique(),
         })
     }
 
