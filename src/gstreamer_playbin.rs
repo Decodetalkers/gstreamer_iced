@@ -2,7 +2,8 @@ use gst::prelude::*;
 use gst::GenericFormattedValue;
 use gstreamer as gst;
 use gstreamer_app as gst_app;
-use std::sync::{Arc, RwLock};
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex, RwLock};
 
 use super::{FrameData, GVideo, IcedGStreamerError, Position};
 
@@ -43,6 +44,10 @@ impl GVideoUrl {
         ));
         let state_c = state.clone();
 
+        let upload_frame = Arc::new(AtomicBool::new(false));
+        let upload_frame_i = upload_frame.clone();
+        let frame = Arc::new(Mutex::new(None));
+        let frame_i = frame.clone();
         app_sink.set_callbacks(
             gst_app::AppSinkCallbacks::builder()
                 .new_sample(move |sink| {
@@ -56,12 +61,15 @@ impl GVideoUrl {
                     let height = s.get::<i32>("height").map_err(|_| gst::FlowError::Error)?;
                     let mut state = state_c.write().map_err(|_| gst::FlowError::Error)?;
 
-                    state.frame = Some(FrameData {
+                    upload_frame_i.store(true, std::sync::atomic::Ordering::SeqCst);
+                    let data = FrameData {
                         width: width as _,
                         height: height as _,
                         pixels: map.as_slice().to_owned(),
-                    });
-                    state.handle = state.frame.clone().map(|f| f.into());
+                    };
+                    state.handle = Some(data.clone().into());
+                    *frame_i.lock().map_err(|_| gst::FlowError::Eos)? = Some(data);
+
                     Ok(gst::FlowSuccess::Ok)
                 })
                 .build(),
@@ -88,6 +96,8 @@ impl GVideoUrl {
             bus: source.bus().unwrap(),
             source,
             state,
+            upload_frame,
+            frame,
         })
     }
 

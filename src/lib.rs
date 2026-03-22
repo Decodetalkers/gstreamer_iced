@@ -8,7 +8,8 @@ use gst::GenericFormattedValue;
 use gstreamer as gst;
 use iced_widget::image;
 use std::hash::Hash;
-use std::sync::{Arc, RwLock};
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex, RwLock};
 use thiserror::Error;
 pub mod reexport {
     pub use url;
@@ -41,7 +42,6 @@ pub use gstreamer_pipewire::GVideoPipewire;
 
 #[derive(Debug, Default)]
 struct State {
-    pub frame: Option<FrameData>,
     pub handle: Option<image::Handle>,
     pub duration: std::time::Duration,
     pub position: std::time::Duration,
@@ -65,6 +65,8 @@ pub struct GVideo<const X: usize> {
     bus: gst::Bus,
     source: gst::Bin,
     state: Arc<RwLock<State>>,
+    upload_frame: Arc<AtomicBool>,
+    frame: Arc<Mutex<Option<FrameData>>>,
 }
 
 #[derive(Debug, Error)]
@@ -139,19 +141,12 @@ pub enum StreamType {
 impl<const X: usize> GVideo<X> {
     /// return an [image::Handle], you can use it to make image
     pub fn frame_handle(&self) -> Option<image::Handle> {
-        self.state
-            .read()
-            .map(|state| state.handle.clone())
-            .map(|frame| frame.map(|f| f.into()))
-            .unwrap_or(None)
+        self.frame_data().map(|frame| frame.into())
     }
 
     /// return [FrameData], you can directly access the data
     pub fn frame_data(&self) -> Option<FrameData> {
-        self.state
-            .read()
-            .map(|state| state.frame.clone())
-            .unwrap_or(None)
+        self.frame.lock().map(|frame| frame.clone()).unwrap_or(None)
     }
 
     /// what the playing status is
