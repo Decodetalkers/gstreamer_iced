@@ -28,6 +28,7 @@ iced_widget = "0.14.2"
 iced_futures = "0.14.0"
 iced_renderer = "0.14.0"
 iced_runtime = "0.14.0"
+log = "0.4.29"
 
 [dev-dependencies]
 tokio = { version = "1.50", features = ["full"] }

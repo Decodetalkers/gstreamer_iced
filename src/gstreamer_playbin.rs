@@ -1,28 +1,21 @@
-use futures::channel::mpsc;
 use gst::prelude::*;
 use gst::GenericFormattedValue;
 use gstreamer as gst;
 use gstreamer_app as gst_app;
-use iced_runtime::Task;
-use smol::lock::Mutex as AsyncMutex;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 
-use super::{FrameData, GStreamerMessage, GVideo, IcedGStreamerError, PlayStatus, Position};
+use super::{FrameData, GVideo, IcedGStreamerError, Position};
 
 pub type GVideoUrl = GVideo<0>;
 
 impl GVideoUrl {
-    pub fn seek<T>(&mut self, position: T) -> Result<(), IcedGStreamerError>
+    pub fn seek<T>(&self, position: T) -> Result<(), IcedGStreamerError>
     where
         T: Into<Position>,
     {
         let pos: Position = position.into();
         let position: GenericFormattedValue = pos.into();
         self.source.seek_simple(gst::SeekFlags::FLUSH, position)?;
-
-        if let PlayStatus::End = self.play_status {
-            self.play_status = PlayStatus::Playing;
-        }
 
         Ok(())
     }
@@ -45,10 +38,10 @@ impl GVideoUrl {
             .caps(&app_sink_caps)
             .build();
 
-        let frame: Arc<Mutex<Option<FrameData>>> = Arc::new(Mutex::new(None));
-        let frame_ref = Arc::clone(&frame);
-
-        let (mut sd, rv) = mpsc::channel::<GStreamerMessage>(100);
+        let state = Arc::new(RwLock::new(
+            crate::State::new().with_info_get_started(islive),
+        ));
+        let state_c = state.clone();
 
         app_sink.set_callbacks(
             gst_app::AppSinkCallbacks::builder()
@@ -61,12 +54,13 @@ impl GVideoUrl {
                     let s = caps.structure(0).ok_or(gst::FlowError::Error)?;
                     let width = s.get::<i32>("width").map_err(|_| gst::FlowError::Error)?;
                     let height = s.get::<i32>("height").map_err(|_| gst::FlowError::Error)?;
-                    *frame_ref.lock().map_err(|_| gst::FlowError::Error)? = Some(FrameData {
+                    let mut state = state_c.write().map_err(|_| gst::FlowError::Error)?;
+
+                    state.frame = Some(FrameData {
                         width: width as _,
                         height: height as _,
                         pixels: map.as_slice().to_owned(),
                     });
-                    sd.try_send(GStreamerMessage::Update).ok();
                     Ok(gst::FlowSuccess::Ok)
                 })
                 .build(),
@@ -90,112 +84,113 @@ impl GVideoUrl {
         let source = videosource.downcast::<gst::Bin>().unwrap();
 
         Ok(Self {
-            frame,
             bus: source.bus().unwrap(),
             source,
-            play_status: PlayStatus::Stop,
-            rv: Arc::new(AsyncMutex::new(rv)),
-            duration: std::time::Duration::from_nanos(0),
-            position: std::time::Duration::from_nanos(0),
-            info_get_started: !islive,
-            volume: 0_f64,
+            state,
         })
     }
 
     // update for gstreamer base
-    pub fn update(&mut self, message: GStreamerMessage) -> Task<GStreamerMessage> {
-        match message {
-            GStreamerMessage::Update => {
-                // get the info in the first time of dispatch
-                if self.info_get_started {
-                    loop {
-                        self.source
-                            .state(gst::ClockTime::from_seconds(5))
-                            .0
-                            .unwrap();
+    //pub fn update(&mut self, message: GStreamerMessage) -> Task<GStreamerMessage> {
+    //    match message {
+    //        GStreamerMessage::Update => {
+    //            // get the info in the first time of dispatch
+    //            if self.info_get_started {
+    //                loop {
+    //                    self.source
+    //                        .state(gst::ClockTime::from_seconds(5))
+    //                        .0
+    //                        .unwrap();
 
-                        if let Some(time) = self.source.query_duration::<gst::ClockTime>() {
-                            self.duration = std::time::Duration::from_nanos(time.nseconds());
-                            break;
-                        }
-                    }
-                    self.info_get_started = false;
-                }
-                if self.duration.as_nanos() != 0 {
-                    loop {
-                        if let Some(time) = self.source.query_position::<gst::ClockTime>() {
-                            self.position = std::time::Duration::from_nanos(time.nseconds());
-                            break;
-                        }
-                        self.source
-                            .state(gst::ClockTime::from_seconds(5))
-                            .0
-                            .unwrap();
-                    }
-                }
-                self.volume = self.source.property("volume");
-            }
+    //                    if let Some(time) = self.source.query_duration::<gst::ClockTime>() {
+    //                        self.duration = std::time::Duration::from_nanos(time.nseconds());
+    //                        break;
+    //                    }
+    //                }
+    //                self.info_get_started = false;
+    //            }
+    //            if self.duration.as_nanos() != 0 {
+    //                loop {
+    //                    if let Some(time) = self.source.query_position::<gst::ClockTime>() {
+    //                        self.position = std::time::Duration::from_nanos(time.nseconds());
+    //                        break;
+    //                    }
+    //                    self.source
+    //                        .state(gst::ClockTime::from_seconds(5))
+    //                        .0
+    //                        .unwrap();
+    //                }
+    //            }
+    //            self.volume = self.source.property("volume");
+    //        }
 
-            GStreamerMessage::PlayStatusChanged(status) => {
-                match status {
-                    PlayStatus::Playing => {
-                        self.source.set_state(gst::State::Playing).unwrap();
-                    }
-                    PlayStatus::Stop => {
-                        self.source.set_state(gst::State::Paused).unwrap();
-                    }
-                    _ => {}
-                }
-                self.play_status = status;
-            }
-            GStreamerMessage::BusGoToEnd => {
-                self.play_status = PlayStatus::End;
-            }
-            GStreamerMessage::Ready(mut sender) => {
-                let rv = self.rv.clone();
-                let _ = sender.try_send(rv);
-            }
-        }
-        Task::none()
-    }
+    //        GStreamerMessage::PlayStatusChanged(status) => {
+    //            match status {
+    //                PlayStatus::Playing => {
+    //                    self.source.set_state(gst::State::Playing).unwrap();
+    //                }
+    //                PlayStatus::Stop => {
+    //                    self.source.set_state(gst::State::Paused).unwrap();
+    //                }
+    //                _ => {}
+    //            }
+    //            self.play_status = status;
+    //        }
+    //        GStreamerMessage::BusGoToEnd => {
+    //            self.play_status = PlayStatus::End;
+    //        }
+    //        GStreamerMessage::Ready(mut sender) => {
+    //            let rv = self.rv.clone();
+    //            let _ = sender.try_send(rv);
+    //        }
+    //    }
+    //    Task::none()
+    //}
 
     /// get the volume of the video
     pub fn volume(&self) -> f64 {
-        self.volume
+        let state = self.state.read().unwrap();
+        state.volume
     }
 
     /// only can be set when source is video
-    pub fn set_volume(&mut self, volume: f64) {
+    pub fn set_volume(&self, volume: f64) {
         self.source.set_property("volume", volume);
     }
 
     /// get the duration, if is live or pipewire, it is 0
     pub fn duration(&self) -> std::time::Duration {
-        self.duration
+        let state = self.state.read().unwrap();
+        state.duration
     }
 
     /// where the video is now
     pub fn position(&self) -> std::time::Duration {
-        self.position
+        let state = self.state.read().unwrap();
+        state.position
     }
 
     /// turn duration to seconds
     pub fn duration_seconds(&self) -> f64 {
-        self.duration.as_secs_f64()
+        let state = self.state.read().unwrap();
+        state.duration.as_secs_f64()
     }
 
     /// turn position to seconds
     pub fn position_seconds(&self) -> f64 {
-        self.position.as_secs_f64()
+        let state = self.state.read().unwrap();
+        state.position.as_secs_f64()
     }
 
     /// turn duration to nanos
     pub fn duration_nanos(&self) -> f64 {
-        self.duration.as_secs_f64()
+        let state = self.state.read().unwrap();
+        state.duration.as_secs_f64()
     }
 
     /// turn position to nanos
     pub fn position_nanos(&self) -> u128 {
-        self.position.as_nanos()
+        let state = self.state.read().unwrap();
+        state.position.as_nanos()
     }
 }

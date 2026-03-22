@@ -2,31 +2,20 @@ mod gstreamer_pipewire;
 mod gstreamer_playbin;
 mod video_player;
 
-use futures::channel::mpsc;
 use gst::glib;
 use gst::prelude::*;
 use gst::GenericFormattedValue;
 use gstreamer as gst;
-use iced_futures::futures::SinkExt;
-use iced_futures::futures::StreamExt;
 use iced_widget::image;
-use mpsc::{Receiver, Sender};
-use smol::lock::Mutex as AsyncMutex;
 use std::hash::Hash;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 use thiserror::Error;
 pub mod reexport {
     pub use url;
 }
 pub use video_player::VideoPlayer;
 
-#[derive(Debug, Clone, Copy, Hash)]
-pub enum PlayStatus {
-    Stop,
-    Playing,
-    End,
-}
-
+pub use gst::State as PlayingState;
 #[derive(Debug, Clone)]
 pub struct FrameData {
     pub pixels: Vec<u8>,
@@ -50,17 +39,31 @@ pub use gstreamer_playbin::GVideoUrl;
 
 pub use gstreamer_pipewire::GVideoPipewire;
 
+#[derive(Debug, Default)]
+struct State {
+    pub frame: Option<FrameData>,
+    pub duration: std::time::Duration,
+    pub position: std::time::Duration,
+    pub volume: f64,
+    pub info_get_started: bool,
+}
+impl State {
+    fn new() -> Self {
+        Self::default()
+    }
+    fn with_info_get_started(self, info_get_started: bool) -> Self {
+        Self {
+            info_get_started,
+            ..self
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct GVideo<const X: usize> {
-    frame: Arc<Mutex<Option<FrameData>>>, //pipeline: gst::Pipeline,
     bus: gst::Bus,
     source: gst::Bin,
-    play_status: PlayStatus,
-    rv: Arc<AsyncMutex<mpsc::Receiver<GStreamerMessage>>>,
-    duration: std::time::Duration,
-    position: std::time::Duration,
-    info_get_started: bool,
-    volume: f64,
+    state: Arc<RwLock<State>>,
 }
 
 #[derive(Debug, Error)]
@@ -118,14 +121,6 @@ impl From<u64> for Position {
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum GStreamerMessage {
-    Update,
-    PlayStatusChanged(PlayStatus),
-    BusGoToEnd,
-    Ready(Sender<Arc<AsyncMutex<Receiver<GStreamerMessage>>>>),
-}
-
 impl<const X: usize> Drop for GVideo<X> {
     fn drop(&mut self) {
         self.source
@@ -137,80 +132,44 @@ impl<const X: usize> Drop for GVideo<X> {
 impl<const X: usize> GVideo<X> {
     /// return an [image::Handle], you can use it to make image
     pub fn frame_handle(&self) -> Option<image::Handle> {
-        self.frame
-            .lock()
-            .map(|frame| frame.clone().map(|f| f.into()))
+        self.state
+            .read()
+            .map(|state| state.frame.clone())
+            .map(|frame| frame.map(|f| f.into()))
             .unwrap_or(None)
     }
 
     /// return [FrameData], you can directly access the data
     pub fn frame_data(&self) -> Option<FrameData> {
-        self.frame.lock().map(|frame| frame.clone()).unwrap_or(None)
+        self.state
+            .read()
+            .map(|state| state.frame.clone())
+            .unwrap_or(None)
     }
 
     /// what the playing status is
-    pub fn play_status(&self) -> &PlayStatus {
-        &self.play_status
+    pub fn play_state(&self) -> gst::State {
+        self.source.current_state()
     }
 
-    fn is_playing(&self) -> bool {
-        matches!(self.play_status, PlayStatus::Playing)
-    }
-
-    /// get the subscription, you can use in iced::subscription
-    pub fn subscription(&self) -> iced_futures::Subscription<GStreamerMessage> {
-        if self.is_playing() {
-            let bus = self.bus.clone();
-            iced_futures::Subscription::batch([
-                iced_futures::Subscription::run(|| {
-                    iced_futures::stream::channel(
-                        100,
-                        |mut output: Sender<GStreamerMessage>| async move {
-                            let (sender, mut receiver) = mpsc::channel(100);
-                            let _ = output.send(GStreamerMessage::Ready(sender)).await;
-                            let Some(rv) = receiver.next().await else {
-                                return;
-                            };
-                            let mut rv = rv.lock().await;
-                            loop {
-                                let Some(message) = rv.next().await else {
-                                    continue;
-                                };
-                                let _ = output.send(message).await;
-                            }
-                        },
-                    )
-                }),
-                iced_futures::Subscription::run_with(bus, |bus| {
-                    let bus = bus.clone();
-                    iced_futures::stream::channel(
-                        100,
-                        |mut output: Sender<GStreamerMessage>| async move {
-                            let mut thebus = bus.stream();
-                            while let Some(view) = thebus.next().await {
-                                match view.view() {
-                                    gst::MessageView::Error(err) => panic!("{:#?}", err),
-                                    gst::MessageView::Eos(_eos) => {
-                                        let _ = output.send(GStreamerMessage::BusGoToEnd).await;
-                                    }
-                                    _ => {}
-                                }
-                            }
-                        },
-                    )
-                }),
-            ])
-        } else {
-            iced_futures::Subscription::none()
-        }
+    pub fn is_playing(&self) -> bool {
+        matches!(self.play_state(), gst::State::Playing)
     }
 
     /// get the type name
-    pub fn gstreamer_type(&self) -> String {
+    pub fn gstreamer_type(&self) -> &str {
         match X {
-            0 => "base".to_owned(),
-            1 => "pipewire".to_owned(),
+            0 => "base",
+            1 => "pipewire",
             _ => unreachable!(),
+        }
+    }
+    pub fn set_status(&self, state: PlayingState) {
+        match state {
+            PlayingState::Playing | PlayingState::Paused => {
+                self.source.set_state(state).unwrap();
+            }
+            _ => {}
         }
     }
 }

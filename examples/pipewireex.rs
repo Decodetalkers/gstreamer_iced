@@ -3,13 +3,12 @@ use ashpd::desktop::{
     PersistMode,
 };
 use iced::widget::container;
-use iced::widget::{button, column, image, text, Image};
+use iced::widget::{button, column, text};
 use iced::Length;
 use iced::Task;
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::sync::Arc;
 
-static MEDIA_PLAYER: &[u8] = include_bytes!("../resource/popandpipi.jpg");
 use gstreamer_iced::*;
 
 async fn get_path() -> ashpd::Result<(u32, Arc<OwnedFd>)> {
@@ -48,19 +47,17 @@ async fn get_path() -> ashpd::Result<(u32, Arc<OwnedFd>)> {
 fn main() -> iced::Result {
     iced::application(GProgram::new, GProgram::update, GProgram::view)
         .title(GProgram::title)
-        .subscription(GProgram::subscription)
         .run()
 }
 
 struct GProgram {
     frame: Option<GVideoPipewire>,
-    handle: image::Handle,
     fd: Option<Arc<OwnedFd>>,
 }
 #[derive(Debug, Clone)]
 enum GStreamerIcedMessage {
-    Gst(GStreamerMessage),
     Ready((u32, Arc<OwnedFd>)),
+    StatusChange(PlayingState),
 }
 
 impl GProgram {
@@ -75,15 +72,16 @@ impl GProgram {
             }
         };
 
-        let btn = match vframe.play_status() {
-            PlayStatus::Stop | PlayStatus::End => button(text("|>")).on_press(
-                GStreamerIcedMessage::Gst(GStreamerMessage::PlayStatusChanged(PlayStatus::Playing)),
-            ),
-            PlayStatus::Playing => button(text("[]")).on_press(GStreamerIcedMessage::Gst(
-                GStreamerMessage::PlayStatusChanged(PlayStatus::Stop),
-            )),
-        };
-        let video = Image::new(&self.handle).width(Length::Fill);
+        let btn: iced::Element<GStreamerIcedMessage> = match vframe.play_state() {
+            PlayingState::Playing => button(text("[]"))
+                .on_press(GStreamerIcedMessage::StatusChange(PlayingState::Paused)),
+            _ => button(text("|>"))
+                .on_press(GStreamerIcedMessage::StatusChange(PlayingState::Playing)),
+        }
+        .into();
+        let video = VideoPlayer::new(&vframe)
+            .width(Length::Fill)
+            .height(Length::Fixed(400.));
 
         container(column![
             video,
@@ -98,19 +96,12 @@ impl GProgram {
 
     fn update(&mut self, message: GStreamerIcedMessage) -> iced::Task<GStreamerIcedMessage> {
         match message {
-            GStreamerIcedMessage::Gst(GStreamerMessage::Update) => {
-                let Some(vframe) = &self.frame else {
-                    return Task::none();
-                };
-                let Some(handle) = vframe.frame_handle() else {
-                    return Task::none();
-                };
-                self.handle = handle;
-                Task::none()
-            }
-            GStreamerIcedMessage::Gst(message) => match &mut self.frame {
-                Some(frame) => frame.update(message).map(GStreamerIcedMessage::Gst),
-                None => Task::none(),
+            GStreamerIcedMessage::StatusChange(status) => match &self.frame {
+                Some(frame) => {
+                    frame.set_status(status);
+                    iced::Task::none()
+                }
+                None => iced::Task::none(),
             },
             GStreamerIcedMessage::Ready((path, fd)) => {
                 self.fd = Some(fd.clone());
@@ -124,18 +115,10 @@ impl GProgram {
         "Iced Gstreamer".to_string()
     }
 
-    fn subscription(&self) -> iced::Subscription<GStreamerIcedMessage> {
-        match &self.frame {
-            Some(frame) => frame.subscription().map(GStreamerIcedMessage::Gst),
-            None => iced::Subscription::none(),
-        }
-    }
-
     fn new() -> (Self, iced::Task<GStreamerIcedMessage>) {
         (
             Self {
                 frame: None,
-                handle: image::Handle::from_bytes(MEDIA_PLAYER),
                 fd: None,
             },
             iced::Task::perform(

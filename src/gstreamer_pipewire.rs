@@ -1,15 +1,11 @@
-use futures::channel::mpsc;
+use super::{FrameData, GVideo, IcedGStreamerError};
 use gst::prelude::*;
 use gstreamer as gst;
 use gstreamer_app as gst_app;
-use iced_runtime::Task;
-use smol::lock::Mutex as AsyncMutex;
 use std::{
     os::fd::RawFd,
-    sync::{Arc, Mutex},
+    sync::{Arc, RwLock},
 };
-
-use super::{FrameData, GStreamerMessage, GVideo, IcedGStreamerError, PlayStatus};
 
 pub type GVideoPipewire = GVideo<1>;
 
@@ -37,10 +33,8 @@ impl GVideoPipewire {
             .caps(&app_sink_caps)
             .build();
 
-        let frame: Arc<Mutex<Option<FrameData>>> = Arc::new(Mutex::new(None));
-        let frame_ref = Arc::clone(&frame);
-
-        let (mut sd, rv) = mpsc::channel::<GStreamerMessage>(100);
+        let state = Arc::new(RwLock::new(crate::State::new()));
+        let state_c = state.clone();
 
         app_sink.set_callbacks(
             gst_app::AppSinkCallbacks::builder()
@@ -53,12 +47,12 @@ impl GVideoPipewire {
                     let s = caps.structure(0).ok_or(gst::FlowError::Error)?;
                     let width = s.get::<i32>("width").map_err(|_| gst::FlowError::Error)?;
                     let height = s.get::<i32>("height").map_err(|_| gst::FlowError::Error)?;
-                    *frame_ref.lock().map_err(|_| gst::FlowError::Error)? = Some(FrameData {
+                    let mut state = state_c.write().map_err(|_| gst::FlowError::Error)?;
+                    state.frame = Some(FrameData {
                         width: width as _,
                         height: height as _,
                         pixels: map.as_slice().to_owned(),
                     });
-                    sd.try_send(GStreamerMessage::Update).ok();
                     Ok(gst::FlowSuccess::Ok)
                 })
                 .build(),
@@ -72,42 +66,9 @@ impl GVideoPipewire {
         source.set_state(gst::State::Playing)?;
 
         Ok(Self {
-            frame,
             bus: source.bus().unwrap(),
             source: source.into(),
-            play_status: PlayStatus::Playing,
-            rv: Arc::new(AsyncMutex::new(rv)),
-            duration: std::time::Duration::from_nanos(0),
-            position: std::time::Duration::from_nanos(0),
-            info_get_started: true,
-            volume: 0_f64,
+            state,
         })
-    }
-
-    /// update for pipewire
-    pub fn update(&mut self, message: GStreamerMessage) -> Task<GStreamerMessage> {
-        match message {
-            GStreamerMessage::PlayStatusChanged(status) => {
-                match status {
-                    PlayStatus::Playing => {
-                        self.source.set_state(gst::State::Playing).unwrap();
-                    }
-                    PlayStatus::Stop => {
-                        self.source.set_state(gst::State::Paused).unwrap();
-                    }
-                    _ => {}
-                }
-                self.play_status = status;
-            }
-            GStreamerMessage::BusGoToEnd => {
-                self.play_status = PlayStatus::End;
-            }
-            GStreamerMessage::Ready(mut sender) => {
-                let rv = self.rv.clone();
-                let _ = sender.try_send(rv);
-            }
-            _ => {}
-        }
-        Task::none()
     }
 }

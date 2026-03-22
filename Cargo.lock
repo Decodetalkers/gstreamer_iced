@@ -1731,6 +1731,7 @@ dependencies = [
  "iced_runtime",
  "iced_wgpu",
  "iced_widget",
+ "log",
  "smol",
  "thiserror 2.0.18",
  "tokio",

@@ -1,20 +1,13 @@
 use iced::widget::container;
-use iced::widget::{button, column, image, row, slider, text, Image};
+use iced::widget::{button, column, row, slider, text};
 use iced::{Element, Length};
 
 use gstreamer_iced::*;
 
-static MEDIA_PLAYER: &[u8] = include_bytes!("../resource/popandpipi.jpg");
-
 fn main() -> iced::Result {
-    iced::application(
-        GProgram::new,
-        GProgram::update,
-        GProgram::view,
-    )
-    .title(GProgram::title)
-    .subscription(GProgram::subscription)
-    .run()
+    iced::application(GProgram::new, GProgram::update, GProgram::view)
+        .title(GProgram::title)
+        .run()
 }
 
 #[derive(Debug)]
@@ -23,32 +16,26 @@ struct GProgram {
 }
 #[derive(Debug, Clone)]
 enum GStreamerIcedMessage {
-    Gst(GStreamerMessage),
     Jump(u8),
     VolChange(f64),
+    StatusChange(PlayingState),
 }
 
 impl GProgram {
     fn view(&'_ self) -> iced::Element<'_, GStreamerIcedMessage> {
-        let frame = self
-            .frame
-            .frame_handle()
-            .unwrap_or(image::Handle::from_bytes(MEDIA_PLAYER));
         let fullduration = self.frame.duration_seconds();
         let current_pos = self.frame.position_seconds();
         let duration = (fullduration / 8.0) as u8;
         let pos = (current_pos / 8.0) as u8;
 
-        let btn: Element<GStreamerIcedMessage> = match self.frame.play_status() {
-            PlayStatus::Stop | PlayStatus::End => button(text("|>")).on_press(
-                GStreamerIcedMessage::Gst(GStreamerMessage::PlayStatusChanged(PlayStatus::Playing)),
-            ),
-            PlayStatus::Playing => button(text("[]")).on_press(GStreamerIcedMessage::Gst(
-                GStreamerMessage::PlayStatusChanged(PlayStatus::Stop),
-            )),
+        let btn: Element<GStreamerIcedMessage> = match self.frame.play_state() {
+            PlayingState::Playing => button(text("[]"))
+                .on_press(GStreamerIcedMessage::StatusChange(PlayingState::Paused)),
+            _ => button(text("|>"))
+                .on_press(GStreamerIcedMessage::StatusChange(PlayingState::Playing)),
         }
         .into();
-        let video = Image::new(frame).width(Length::Fill);
+        let video = VideoPlayer::new(&self.frame).width(Length::Fill);
 
         let pos_status = text(format!("{:.1} s/{:.1} s", current_pos, fullduration));
         let du_silder = slider(0..=duration, pos, GStreamerIcedMessage::Jump);
@@ -78,14 +65,15 @@ impl GProgram {
 
     fn update(&mut self, message: GStreamerIcedMessage) -> iced::Task<GStreamerIcedMessage> {
         match message {
-            GStreamerIcedMessage::Gst(message) => {
-                self.frame.update(message).map(GStreamerIcedMessage::Gst)
-            }
             GStreamerIcedMessage::Jump(step) => {
                 self.frame
                     .seek(std::time::Duration::from_secs(step as u64 * 8))
                     .unwrap();
-                iced::Task::done(GStreamerIcedMessage::Gst(GStreamerMessage::Update))
+                iced::Task::none()
+            }
+            GStreamerIcedMessage::StatusChange(status) => {
+                self.frame.set_status(status);
+                iced::Task::none()
             }
             GStreamerIcedMessage::VolChange(vol) => {
                 let currentvol = self.frame.volume();
@@ -93,17 +81,13 @@ impl GProgram {
                 if newvol >= 0.0 {
                     self.frame.set_volume(newvol);
                 }
-                iced::Task::done(GStreamerIcedMessage::Gst(GStreamerMessage::Update))
+                iced::Task::none()
             }
         }
     }
 
     fn title(&self) -> String {
         "Iced Gstreamer".to_string()
-    }
-
-    fn subscription(&self) -> iced::Subscription<GStreamerIcedMessage> {
-        self.frame.subscription().map(GStreamerIcedMessage::Gst)
     }
 
     fn new() -> Self {
