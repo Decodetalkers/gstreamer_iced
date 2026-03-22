@@ -17,6 +17,7 @@ pub struct VideoPlayer<'a, Message, Theme = iced_core::Theme, Renderer = iced_re
     width: iced_core::Length,
     height: iced_core::Length,
     on_end_of_stream: Option<Message>,
+    #[allow(clippy::type_complexity)]
     on_error: Option<Box<dyn Fn(&glib::Error) -> Message + 'a>>,
     on_duration_changed: Option<Box<dyn Fn(Duration) -> Message + 'a>>,
     on_position_changed: Option<Box<dyn Fn(Duration) -> Message + 'a>>,

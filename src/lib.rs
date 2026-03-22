@@ -81,6 +81,12 @@ pub enum GVideo {
     None,
 }
 
+impl Default for GVideo {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GVideo {
     pub fn new() -> Self {
         Self::None

@@ -160,6 +160,7 @@ impl Pipeline for VideoPipeline {
 }
 
 impl VideoPipeline {
+    #[allow(clippy::too_many_arguments)]
     fn upload(
         &mut self,
         device: &wgpu::Device,
