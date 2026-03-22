@@ -37,7 +37,7 @@ jobs:
           components: clippy, rustfmt
       - name: install deps
         run: |
-          pacman -Syu --noconfirm gstreamer gst-plugins-base gst-plugin-pipewire gst-plugins-good base-devel
+          pacman -Syu --noconfirm gstreamer gst-plugins-base gst-plugin-pipewire gst-plugins-good base-devel clang
       - uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
       - name: Lint (clippy)
         run: cargo clippy --all-targets
@@ -86,7 +86,7 @@ jobs:
         components: clippy rustfmt
     - name: Install dependencies
       run: |
-        pacman -Syu --noconfirm gstreamer gst-plugins-base gst-plugin-pipewire gst-plugins-good base-devel
+        pacman -Syu --noconfirm gstreamer gst-plugins-base gst-plugin-pipewire gst-plugins-good base-devel clang
     - name: Obtain crates.io token
       uses: rust-lang/crates-io-auth-action@b7e9a28eded4986ec6b1fa40eeee8f8f165559ec # v1.0.3
       id: auth
