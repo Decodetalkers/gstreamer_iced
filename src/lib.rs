@@ -1,5 +1,7 @@
 mod gstreamer_pipewire;
 mod gstreamer_playbin;
+mod id;
+mod pipeline;
 mod video_player;
 
 use gst::glib;
@@ -22,6 +24,18 @@ pub struct FrameData {
     pub pixels: Vec<u8>,
     pub width: u32,
     pub height: u32,
+}
+
+impl FrameData {
+    fn stride(&self) -> u32 {
+        self.width
+    }
+    fn data(&self) -> &[u8] {
+        &self.pixels
+    }
+    fn size(&self) -> (u32, u32) {
+        (self.width, self.height)
+    }
 }
 
 impl From<FrameData> for image::Handle {
@@ -66,7 +80,9 @@ pub struct GVideo<const X: usize> {
     source: gst::Bin,
     state: Arc<RwLock<State>>,
     upload_frame: Arc<AtomicBool>,
+    alive: Arc<AtomicBool>,
     frame: Arc<Mutex<Option<FrameData>>>,
+    id: id::Id,
 }
 
 #[derive(Debug, Error)]

@@ -1,15 +1,23 @@
 use std::marker::PhantomData;
+use std::sync::atomic::Ordering;
 
+use crate::pipeline::VideoPrimitive;
 use crate::GVideo;
 use crate::StreamType;
 use gstreamer as gst;
 use gstreamer::glib;
 use gstreamer::prelude::*;
-use iced_core::{image, layout, Widget};
-use iced_core::{ContentFit, Point, Rectangle, Rotation, Size, Vector};
+use iced_core::{layout, Widget};
+use iced_wgpu::primitive::Renderer as PrimitiveRenderer;
 use std::time::Duration;
 
-pub struct VideoPlayer<'a, const X: usize, Message, Theme = iced_core::Theme> {
+pub struct VideoPlayer<
+    'a,
+    const X: usize,
+    Message,
+    Theme = iced_core::Theme,
+    Renderer = iced_renderer::Renderer,
+> {
     video: &'a GVideo<X>,
     content_fit: iced_core::ContentFit,
     width: iced_core::Length,
@@ -20,9 +28,13 @@ pub struct VideoPlayer<'a, const X: usize, Message, Theme = iced_core::Theme> {
     on_position_changed: Option<Box<dyn Fn(Duration) -> Message + 'a>>,
     _theme: PhantomData<Theme>,
     _message: PhantomData<Message>,
+    _renderer: PhantomData<Renderer>,
 }
 
-impl<'a, const X: usize, Message, Theme> VideoPlayer<'a, X, Message, Theme> {
+impl<'a, const X: usize, Message, Theme, Renderer> VideoPlayer<'a, X, Message, Theme, Renderer>
+where
+    Renderer: PrimitiveRenderer,
+{
     pub fn new(video: &'a GVideo<X>) -> Self {
         Self {
             video,
@@ -35,6 +47,7 @@ impl<'a, const X: usize, Message, Theme> VideoPlayer<'a, X, Message, Theme> {
             on_position_changed: None,
             _theme: PhantomData,
             _message: PhantomData,
+            _renderer: PhantomData,
         }
     }
 
@@ -85,125 +98,11 @@ impl<'a, const X: usize, Message, Theme> VideoPlayer<'a, X, Message, Theme> {
         }
     }
 }
-
-fn drawing_bounds<Renderer>(
-    renderer: &Renderer,
-    bounds: Rectangle,
-    handle: &image::Handle,
-    region: Option<Rectangle<u32>>,
-    content_fit: ContentFit,
-    rotation: Rotation,
-    scale: f32,
-) -> Rectangle
-where
-    Renderer: image::Renderer<Handle = image::Handle>,
-{
-    let original_size = renderer.measure_image(handle).unwrap_or_default();
-    let image_size = crop(original_size, region);
-    let rotated_size = rotation.apply(image_size);
-    let adjusted_fit = content_fit.fit(rotated_size, bounds.size());
-
-    let fit_scale = Vector::new(
-        adjusted_fit.width / rotated_size.width,
-        adjusted_fit.height / rotated_size.height,
-    );
-
-    let final_size = image_size * fit_scale * scale;
-
-    let (crop_offset, final_size) = if let Some(region) = region {
-        let x = region.x.min(original_size.width) as f32;
-        let y = region.y.min(original_size.height) as f32;
-        let width = image_size.width;
-        let height = image_size.height;
-
-        let ratio = Vector::new(
-            original_size.width as f32 / width,
-            original_size.height as f32 / height,
-        );
-
-        let final_size = final_size * ratio;
-
-        let scale = Vector::new(
-            final_size.width / original_size.width as f32,
-            final_size.height / original_size.height as f32,
-        );
-
-        let offset = match content_fit {
-            ContentFit::None => Vector::new(x * scale.x, y * scale.y),
-            _ => Vector::new(
-                ((original_size.width as f32 - width) / 2.0 - x) * scale.x,
-                ((original_size.height as f32 - height) / 2.0 - y) * scale.y,
-            ),
-        };
-
-        (offset, final_size)
-    } else {
-        (Vector::ZERO, final_size)
-    };
-
-    let position = match content_fit {
-        ContentFit::None => Point::new(
-            bounds.x + (rotated_size.width - adjusted_fit.width) / 2.0,
-            bounds.y + (rotated_size.height - adjusted_fit.height) / 2.0,
-        ),
-        _ => Point::new(
-            bounds.center_x() - final_size.width / 2.0,
-            bounds.center_y() - final_size.height / 2.0,
-        ),
-    };
-
-    Rectangle::new(position + crop_offset, final_size)
-}
-
-fn crop(size: Size<u32>, region: Option<Rectangle<u32>>) -> Size<f32> {
-    if let Some(region) = region {
-        Size::new(
-            region.width.min(size.width) as f32,
-            region.height.min(size.height) as f32,
-        )
-    } else {
-        Size::new(size.width as f32, size.height as f32)
-    }
-}
-
-/// Draws an [`Image`]
-pub fn draw<Renderer>(
-    renderer: &mut Renderer,
-    layout: iced_core::Layout<'_>,
-    handle: &image::Handle,
-    crop: Option<iced_core::Rectangle<u32>>,
-    border_radius: iced_core::border::Radius,
-    content_fit: iced_core::ContentFit,
-    filter_method: image::FilterMethod,
-    rotation: iced_core::Rotation,
-    opacity: f32,
-    scale: f32,
-) where
-    Renderer: image::Renderer<Handle = image::Handle>,
-{
-    let bounds = layout.bounds();
-    let drawing_bounds =
-        drawing_bounds(renderer, bounds, handle, crop, content_fit, rotation, scale);
-
-    renderer.draw_image(
-        image::Image {
-            handle: handle.clone(),
-            border_radius,
-            filter_method,
-            rotation: rotation.radians(),
-            opacity,
-            snap: true,
-        },
-        drawing_bounds,
-        bounds,
-    );
-}
-
 impl<const X: usize, Message, Theme, Renderer> Widget<Message, Theme, Renderer>
-    for VideoPlayer<'_, X, Message, Theme>
+    for VideoPlayer<'_, X, Message, Theme, Renderer>
 where
     Message: Clone,
-    Renderer: image::Renderer<Handle = image::Handle>,
+    Renderer: PrimitiveRenderer,
 {
     fn size(&self) -> iced_core::Size<iced_core::Length> {
         iced_core::Size {
@@ -250,24 +149,51 @@ where
         _cursor: iced_core::mouse::Cursor,
         _viewport: &iced_core::Rectangle,
     ) {
-        let Ok(state) = self.video.state.read() else {
+        let Some(data) = self.video.frame_data() else {
             return;
         };
-        let Some(handle) = state.handle.as_ref() else {
-            return;
-        };
-        draw(
-            renderer,
-            layout,
-            handle,
-            None,
-            Default::default(),
-            self.content_fit,
-            Default::default(),
-            Rotation::default(),
-            1.,
-            1.,
+        let (width, height) = data.size();
+        let image_size = iced_core::Size::new(width as f32, height as f32);
+        let bounds = layout.bounds();
+        let adjusted_fit = self.content_fit.fit(image_size, bounds.size());
+        let scale = iced_core::Vector::new(
+            adjusted_fit.width / image_size.width,
+            adjusted_fit.height / image_size.height,
         );
+        let final_size = image_size * scale;
+
+        let position = match self.content_fit {
+            iced_core::ContentFit::None => iced_core::Point::new(
+                bounds.x + (image_size.width - adjusted_fit.width) / 2.0,
+                bounds.y + (image_size.height - adjusted_fit.height) / 2.0,
+            ),
+            _ => iced_core::Point::new(
+                bounds.center_x() - final_size.width / 2.0,
+                bounds.center_y() - final_size.height / 2.0,
+            ),
+        };
+
+        let drawing_bounds = iced_core::Rectangle::new(position, final_size);
+
+        let upload_frame = self.video.upload_frame.swap(false, Ordering::SeqCst);
+
+        let render = |renderer: &mut Renderer| {
+            renderer.draw_primitive(
+                drawing_bounds,
+                VideoPrimitive::new(
+                    *self.video.id,
+                    self.video.alive.clone(),
+                    self.video.frame.clone(),
+                    upload_frame,
+                ),
+            );
+        };
+
+        if adjusted_fit.width > bounds.width || adjusted_fit.height > bounds.height {
+            renderer.with_layer(bounds, render);
+        } else {
+            render(renderer);
+        }
     }
     fn update(
         &mut self,
@@ -340,6 +266,7 @@ where
                 gst::MessageView::Eos(_eos) => {
                     if let Some(on_end_of_stream) = self.on_end_of_stream.clone() {
                         shell.publish(on_end_of_stream);
+                        self.video.alive.swap(false, Ordering::SeqCst);
                     }
                 }
                 _ => {}
@@ -348,14 +275,15 @@ where
     }
 }
 
-impl<'a, const X: usize, Message, Theme, Renderer> From<VideoPlayer<'a, X, Message, Theme>>
+impl<'a, const X: usize, Message, Theme, Renderer>
+    From<VideoPlayer<'a, X, Message, Theme, Renderer>>
     for iced_core::Element<'a, Message, Theme, Renderer>
 where
     Message: 'a + Clone,
     Theme: 'a,
-    Renderer: image::Renderer<Handle = image::Handle>,
+    Renderer: 'a + PrimitiveRenderer,
 {
-    fn from(video_player: VideoPlayer<'a, X, Message, Theme>) -> Self {
+    fn from(video_player: VideoPlayer<'a, X, Message, Theme, Renderer>) -> Self {
         Self::new(video_player)
     }
 }

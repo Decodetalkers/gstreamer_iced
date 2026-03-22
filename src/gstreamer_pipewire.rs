@@ -79,6 +79,8 @@ impl GVideoPipewire {
             state,
             upload_frame,
             frame,
+            alive: Arc::new(AtomicBool::new(true)),
+            id: crate::id::Id::unique(),
         })
     }
 }
