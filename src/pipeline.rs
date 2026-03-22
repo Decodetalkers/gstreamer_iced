@@ -183,7 +183,7 @@ impl VideoPipeline {
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Rgba8Unorm,
+                format: wgpu::TextureFormat::R8Unorm,
                 usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
                 view_formats: &[],
             });
@@ -191,14 +191,14 @@ impl VideoPipeline {
             let texture_uv = device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("iced_video_player texture"),
                 size: wgpu::Extent3d {
-                    width: width,
-                    height: height,
+                    width: width / 2,
+                    height: height / 2,
                     depth_or_array_layers: 1,
                 },
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Rgba8Unorm,
+                format: wgpu::TextureFormat::Rg8Unorm,
                 usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
                 view_formats: &[],
             });
@@ -286,7 +286,7 @@ impl VideoPipeline {
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
-            &frame,
+            &frame[..(stride * height) as usize],
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(stride),
@@ -298,6 +298,7 @@ impl VideoPipeline {
                 depth_or_array_layers: 1,
             },
         );
+
         queue.write_texture(
             wgpu::TexelCopyTextureInfo {
                 texture: texture_uv,
@@ -305,15 +306,15 @@ impl VideoPipeline {
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
-            &frame,
+            &frame[(stride * height) as usize..],
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(stride),
-                rows_per_image: Some(height),
+                rows_per_image: Some(height / 2),
             },
             wgpu::Extent3d {
-                width,
-                height,
+                width: width / 2,
+                height: height / 2,
                 depth_or_array_layers: 1,
             },
         );

@@ -38,5 +38,19 @@ fn vs_main(@builtin(vertex_index) in_vertex_index: u32) -> VertexOutput {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return textureSample(tex_y, s, in.uv);
+    // BT.709 precomputed coefficients
+    let yuv2rgb = mat3x3<f32>(
+        1, 0, 1.5748,
+        1, -0.1873, -0.4681,
+        1, 1.8556, 0,
+    );
+
+    var yuv = vec3<f32>(0.0);
+    yuv.x = (textureSample(tex_y, s, in.uv).r - 0.0625) / 0.8588;
+    yuv.y = (textureSample(tex_uv, s, in.uv).r - 0.5) / 0.8784;
+    yuv.z = (textureSample(tex_uv, s, in.uv).g - 0.5) / 0.8784;
+
+    var rgb = clamp(yuv * yuv2rgb, vec3<f32>(0), vec3<f32>(1));
+
+    return vec4<f32>(rgb, 1.0);
 }

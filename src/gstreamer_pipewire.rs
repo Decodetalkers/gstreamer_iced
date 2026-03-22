@@ -24,7 +24,7 @@ impl GVideoPipewire {
         let videoconvert = gst::ElementFactory::make("videoconvert").build()?;
 
         let app_sink_caps = gst::Caps::builder("video/x-raw")
-            .field("format", "RGBA")
+            .field("format", "NV12")
             .field("pixel-aspect-ratio", gst::Fraction::new(1, 1))
             .build();
 

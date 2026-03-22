@@ -26,16 +26,16 @@ impl GVideoUrl {
         gst::init()?;
 
         let video_sink = gst::Bin::new();
-        let videoconvert = gst::ElementFactory::make("videoconvert").build()?;
         let videoscale = gst::ElementFactory::make("videoscale").build()?;
+        let videoconvert = gst::ElementFactory::make("videoconvert").build()?;
 
         let app_sink_caps = gst::Caps::builder("video/x-raw")
-            .field("format", "RGBA")
+            .field("format", "NV12")
             .field("pixel-aspect-ratio", gst::Fraction::new(1, 1))
             .build();
 
         let app_sink: gst_app::AppSink = gst_app::AppSink::builder()
-            .name("app_sink")
+            .name("my_sink")
             .caps(&app_sink_caps)
             .build();
 
@@ -77,10 +77,10 @@ impl GVideoUrl {
 
         let app_sink: gst::Element = app_sink.into();
 
-        video_sink.add_many([&videoconvert, &videoscale, &app_sink])?;
-        gst::Element::link_many([&videoconvert, &videoscale, &app_sink])?;
+        video_sink.add_many([&videoscale, &videoconvert, &app_sink])?;
+        gst::Element::link_many([&videoscale, &videoconvert, &app_sink])?;
 
-        let staticpad = videoconvert.static_pad("sink").unwrap();
+        let staticpad = videoscale.static_pad("sink").unwrap();
         let sinkgost = gst::GhostPad::builder_with_target(&staticpad)?.build();
         sinkgost.set_active(true)?;
         video_sink.add_pad(&sinkgost)?;
@@ -99,7 +99,7 @@ impl GVideoUrl {
             upload_frame,
             frame,
             alive: Arc::new(AtomicBool::new(true)),
-            id: crate::id::Id::unique()
+            id: crate::id::Id::unique(),
         })
     }
 
