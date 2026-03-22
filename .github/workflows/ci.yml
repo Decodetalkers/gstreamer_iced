@@ -23,7 +23,7 @@ env:
   RUSTFLAGS: -D warnings
 
 jobs:
-  test:
+  build-test:
     name: Lint and test
     runs-on: ubuntu-24.04
     container:
@@ -74,7 +74,7 @@ jobs:
       id-token: write
     if: startsWith(github.ref, 'refs/tags/v')
     needs:
-      - build
+      - build-test
     steps:
     - name: Checkout
       uses: actions/checkout@v6
