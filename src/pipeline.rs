@@ -191,8 +191,8 @@ impl VideoPipeline {
             let texture_uv = device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("iced_video_player texture"),
                 size: wgpu::Extent3d {
-                    width: width / 2,
-                    height: height / 2,
+                    width: width,
+                    height: height,
                     depth_or_array_layers: 1,
                 },
                 mip_level_count: 1,
@@ -273,11 +273,34 @@ impl VideoPipeline {
             });
         }
 
-        let VideoEntry { texture_y, .. } = self.videos.get(&video_id).unwrap();
+        let VideoEntry {
+            texture_y,
+            texture_uv,
+            ..
+        } = self.videos.get(&video_id).unwrap();
 
         queue.write_texture(
             wgpu::TexelCopyTextureInfo {
                 texture: texture_y,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &frame[..(stride * height) as usize],
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(stride),
+                rows_per_image: Some(height),
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: texture_uv,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
