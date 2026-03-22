@@ -103,7 +103,7 @@ impl GProgram {
     fn new() -> (Self, iced::Task<GStreamerIcedMessage>) {
         (
             Self {
-                video: GVideo::new(),
+                video: GVideo::empty(),
                 fd: None,
             },
             iced::Task::perform(

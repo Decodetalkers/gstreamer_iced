@@ -11,6 +11,7 @@ use gstreamer as gst;
 use std::hash::Hash;
 use std::os::fd::RawFd;
 use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, RwLock};
 use thiserror::Error;
 pub mod reexport {
@@ -69,16 +70,21 @@ pub enum GVideo {
 
 impl Default for GVideo {
     fn default() -> Self {
-        Self::new()
+        Self::empty()
     }
 }
 
 impl GVideo {
-    pub fn new() -> Self {
+    /// Open a empty video instance
+    pub fn empty() -> Self {
         Self::None
     }
     pub fn open_pipewire(&mut self, path: u32, fd: RawFd) -> Result<(), IcedGStreamerError> {
         *self = Self::new_pipewire(path, fd)?;
+        Ok(())
+    }
+    pub fn open_url(&mut self, url: &url::Url, is_live: bool) -> Result<(), IcedGStreamerError> {
+        *self = Self::new_url(url, is_live)?;
         Ok(())
     }
     pub fn new_pipewire(path: u32, fd: RawFd) -> Result<Self, IcedGStreamerError> {
@@ -251,6 +257,7 @@ impl<const X: usize> Drop for GVideoInner<X> {
         self.source
             .set_state(gst::State::Null)
             .expect("failed to set state");
+        self.alive.store(false, Ordering::SeqCst);
     }
 }
 

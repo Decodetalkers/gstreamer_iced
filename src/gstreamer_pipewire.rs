@@ -12,7 +12,7 @@ pub type GVideoPipewire = GVideoInner<1>;
 impl GVideoPipewire {
     /// Accept a pipewire stream, it accept a pipewire path, you may can get it from ashpd, it is
     /// called node.
-    pub fn new_pipewire(path: u32, fd: RawFd) -> Result<Self, IcedGStreamerError> {
+    pub(crate) fn new_pipewire(path: u32, fd: RawFd) -> Result<Self, IcedGStreamerError> {
         gst::init()?;
 
         let source = gst::Pipeline::new();

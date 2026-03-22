@@ -22,7 +22,7 @@ impl GVideoUrl {
     }
 
     /// accept url like from local or from http
-    pub fn new_url(url: &url::Url, islive: bool) -> Result<Self, IcedGStreamerError> {
+    pub(crate) fn new_url(url: &url::Url, islive: bool) -> Result<Self, IcedGStreamerError> {
         gst::init()?;
 
         let video_sink = gst::Bin::new();
