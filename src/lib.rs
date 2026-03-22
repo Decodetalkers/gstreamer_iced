@@ -8,7 +8,6 @@ use gst::glib;
 use gst::prelude::*;
 use gst::GenericFormattedValue;
 use gstreamer as gst;
-use iced_widget::image;
 use std::hash::Hash;
 use std::os::fd::RawFd;
 use std::sync::atomic::AtomicBool;
@@ -39,25 +38,12 @@ impl FrameData {
     }
 }
 
-impl From<FrameData> for image::Handle {
-    fn from(
-        FrameData {
-            pixels,
-            width,
-            height,
-        }: FrameData,
-    ) -> Self {
-        image::Handle::from_rgba(width, height, pixels)
-    }
-}
-
 pub use gstreamer_playbin::GVideoUrl;
 
 pub use gstreamer_pipewire::GVideoPipewire;
 
 #[derive(Debug, Default)]
 struct State {
-    pub handle: Option<image::Handle>,
     pub duration: std::time::Duration,
     pub position: std::time::Duration,
     pub volume: f64,
@@ -276,11 +262,6 @@ pub enum StreamType {
 }
 
 impl<const X: usize> GVideoInner<X> {
-    /// return an [image::Handle], you can use it to make image
-    pub fn frame_handle(&self) -> Option<image::Handle> {
-        self.frame_data().map(|frame| frame.into())
-    }
-
     /// return [FrameData], you can directly access the data
     pub fn frame_data(&self) -> Option<FrameData> {
         self.frame.lock().map(|frame| frame.clone()).unwrap_or(None)

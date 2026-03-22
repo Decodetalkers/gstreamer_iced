@@ -42,7 +42,6 @@ impl GVideoUrl {
         let state = Arc::new(RwLock::new(
             crate::State::new().with_try_get_duration(!islive),
         ));
-        let state_c = state.clone();
 
         let upload_frame = Arc::new(AtomicBool::new(false));
         let upload_frame_i = upload_frame.clone();
@@ -59,7 +58,6 @@ impl GVideoUrl {
                     let s = caps.structure(0).ok_or(gst::FlowError::Error)?;
                     let width = s.get::<i32>("width").map_err(|_| gst::FlowError::Error)?;
                     let height = s.get::<i32>("height").map_err(|_| gst::FlowError::Error)?;
-                    let mut state = state_c.write().map_err(|_| gst::FlowError::Error)?;
 
                     upload_frame_i.store(true, std::sync::atomic::Ordering::SeqCst);
                     let data = FrameData {
@@ -67,7 +65,6 @@ impl GVideoUrl {
                         height: height as _,
                         pixels: map.as_slice().to_owned(),
                     };
-                    state.handle = Some(data.clone().into());
                     *frame_i.lock().map_err(|_| gst::FlowError::Eos)? = Some(data);
 
                     Ok(gst::FlowSuccess::Ok)
