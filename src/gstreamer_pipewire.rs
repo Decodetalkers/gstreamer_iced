@@ -53,6 +53,7 @@ impl GVideoPipewire {
                         height: height as _,
                         pixels: map.as_slice().to_owned(),
                     });
+                    state.handle = state.frame.clone().map(|f| f.into());
                     Ok(gst::FlowSuccess::Ok)
                 })
                 .build(),

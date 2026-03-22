@@ -1,11 +1,13 @@
 use std::marker::PhantomData;
 
 use crate::GVideo;
+use crate::StreamType;
 use gstreamer as gst;
 use gstreamer::glib;
 use gstreamer::prelude::*;
 use iced_core::{image, layout, Widget};
 use iced_core::{ContentFit, Point, Rectangle, Rotation, Size, Vector};
+use std::time::Duration;
 
 pub struct VideoPlayer<'a, const X: usize, Message, Theme = iced_core::Theme> {
     video: &'a GVideo<X>,
@@ -14,6 +16,8 @@ pub struct VideoPlayer<'a, const X: usize, Message, Theme = iced_core::Theme> {
     height: iced_core::Length,
     on_end_of_stream: Option<Message>,
     on_error: Option<Box<dyn Fn(&glib::Error) -> Message + 'a>>,
+    on_duration_changed: Option<Box<dyn Fn(Duration) -> Message + 'a>>,
+    on_position_changed: Option<Box<dyn Fn(Duration) -> Message + 'a>>,
     _theme: PhantomData<Theme>,
     _message: PhantomData<Message>,
 }
@@ -27,6 +31,8 @@ impl<'a, const X: usize, Message, Theme> VideoPlayer<'a, X, Message, Theme> {
             height: iced_core::Length::Shrink,
             on_error: None,
             on_end_of_stream: None,
+            on_duration_changed: None,
+            on_position_changed: None,
             _theme: PhantomData,
             _message: PhantomData,
         }
@@ -41,6 +47,40 @@ impl<'a, const X: usize, Message, Theme> VideoPlayer<'a, X, Message, Theme> {
     pub fn height(self, height: impl Into<iced_core::Length>) -> Self {
         Self {
             height: height.into(),
+            ..self
+        }
+    }
+    pub fn on_error<F>(self, on_error: F) -> Self
+    where
+        F: 'a + Fn(&glib::Error) -> Message,
+    {
+        VideoPlayer {
+            on_error: Some(Box::new(on_error)),
+            ..self
+        }
+    }
+    /// Message to send when the video reaches the end of stream (i.e., the video ends).
+    pub fn on_end_of_stream(self, on_end_of_stream: Message) -> Self {
+        VideoPlayer {
+            on_end_of_stream: Some(on_end_of_stream),
+            ..self
+        }
+    }
+    pub fn on_duration_changed<F>(self, on_duration_changed: F) -> Self
+    where
+        F: 'a + Fn(Duration) -> Message,
+    {
+        VideoPlayer {
+            on_duration_changed: Some(Box::new(on_duration_changed)),
+            ..self
+        }
+    }
+    pub fn on_position_changed<F>(self, on_position_changed: F) -> Self
+    where
+        F: 'a + Fn(Duration) -> Message,
+    {
+        VideoPlayer {
+            on_position_changed: Some(Box::new(on_position_changed)),
             ..self
         }
     }
@@ -210,13 +250,16 @@ where
         _cursor: iced_core::mouse::Cursor,
         _viewport: &iced_core::Rectangle,
     ) {
-        let Some(handle) = self.video.frame_handle() else {
+        let Ok(state) = self.video.state.read() else {
+            return;
+        };
+        let Some(handle) = state.handle.as_ref() else {
             return;
         };
         draw(
             renderer,
             layout,
-            &handle,
+            handle,
             None,
             Default::default(),
             self.content_fit,
@@ -237,45 +280,47 @@ where
         shell: &mut iced_core::Shell<'_, Message>,
         _viewport: &iced_core::Rectangle,
     ) {
-        let iced_core::Event::Window(iced_core::window::Event::RedrawRequested(_instance)) = event
+        let iced_core::Event::Window(iced_core::window::Event::RedrawRequested(_instant)) = event
         else {
             return;
         };
         let mut state = self.video.state.write().unwrap();
-        match self.video.gstreamer_type() {
-            "base" => {
-                if state.info_get_started {
-                    loop {
-                        self.video
-                            .source
-                            .state(gst::ClockTime::from_seconds(5))
-                            .0
-                            .unwrap();
+        if self.video.stream_type() == StreamType::UrlPlayer {
+            if state.get_duration_attempt && self.video.play_state() == gst::State::Playing {
+                loop {
+                    self.video
+                        .source
+                        .state(gst::ClockTime::from_seconds(1))
+                        .0
+                        .unwrap();
 
-                        if let Some(time) = self.video.source.query_duration::<gst::ClockTime>() {
-                            state.duration = std::time::Duration::from_nanos(time.nseconds());
-                            break;
+                    if let Some(time) = self.video.source.query_duration::<gst::ClockTime>() {
+                        state.duration = std::time::Duration::from_nanos(time.nseconds());
+                        if let Some(on_duration_changed) = &self.on_duration_changed {
+                            shell.publish(on_duration_changed(state.duration));
                         }
-                    }
-                    state.info_get_started = false;
-                }
-                if state.duration.as_nanos() != 0 {
-                    loop {
-                        if let Some(time) = self.video.source.query_position::<gst::ClockTime>() {
-                            state.position = std::time::Duration::from_nanos(time.nseconds());
-                            break;
-                        }
-                        self.video
-                            .source
-                            .state(gst::ClockTime::from_seconds(5))
-                            .0
-                            .unwrap();
+                        break;
                     }
                 }
-                state.volume = self.video.source.property("volume");
+                state.get_duration_attempt = false;
             }
-            "pipewire" => {}
-            _ => unreachable!(),
+            if state.duration.as_nanos() != 0 {
+                loop {
+                    if let Some(time) = self.video.source.query_position::<gst::ClockTime>() {
+                        state.position = std::time::Duration::from_nanos(time.nseconds());
+                        if let Some(on_position_changed) = &self.on_position_changed {
+                            shell.publish(on_position_changed(state.position));
+                        }
+                        break;
+                    }
+                    self.video
+                        .source
+                        .state(gst::ClockTime::from_seconds(5))
+                        .0
+                        .unwrap();
+                }
+            }
+            state.volume = self.video.source.property("volume");
         }
         if self.video.play_state() == gst::State::Playing {
             shell.request_redraw();

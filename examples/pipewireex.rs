@@ -79,9 +79,7 @@ impl GProgram {
                 .on_press(GStreamerIcedMessage::StatusChange(PlayingState::Playing)),
         }
         .into();
-        let video = VideoPlayer::new(&vframe)
-            .width(Length::Fill)
-            .height(Length::Fixed(400.));
+        let video = VideoPlayer::new(&vframe).width(Length::Fill);
 
         container(column![
             video,

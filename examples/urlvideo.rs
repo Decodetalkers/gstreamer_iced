@@ -1,8 +1,8 @@
+use gstreamer_iced::*;
 use iced::widget::container;
 use iced::widget::{button, column, row, slider, text};
 use iced::{Element, Length};
-
-use gstreamer_iced::*;
+use std::time::Duration;
 
 fn main() -> iced::Result {
     iced::application(GProgram::new, GProgram::update, GProgram::view)
@@ -13,35 +13,42 @@ fn main() -> iced::Result {
 #[derive(Debug)]
 struct GProgram {
     frame: GVideoUrl,
+    duration: Duration,
+    position: Duration,
 }
 #[derive(Debug, Clone)]
-enum GStreamerIcedMessage {
+enum GIcedMessage {
     Jump(u8),
     VolChange(f64),
     StatusChange(PlayingState),
+    DurationChanged(Duration),
+    PositionChanged(Duration),
 }
 
 impl GProgram {
-    fn view(&'_ self) -> iced::Element<'_, GStreamerIcedMessage> {
-        let fullduration = self.frame.duration_seconds();
-        let current_pos = self.frame.position_seconds();
+    fn view(&'_ self) -> iced::Element<'_, GIcedMessage> {
+        let fullduration = self.duration.as_secs_f64();
+        let current_pos = self.position.as_secs_f64();
         let duration = (fullduration / 8.0) as u8;
         let pos = (current_pos / 8.0) as u8;
 
-        let btn: Element<GStreamerIcedMessage> = match self.frame.play_state() {
+        let btn: Element<GIcedMessage> = match self.frame.play_state() {
             PlayingState::Playing => button(text("[]"))
-                .on_press(GStreamerIcedMessage::StatusChange(PlayingState::Paused)),
+                .on_press(GIcedMessage::StatusChange(PlayingState::Paused)),
             _ => button(text("|>"))
-                .on_press(GStreamerIcedMessage::StatusChange(PlayingState::Playing)),
+                .on_press(GIcedMessage::StatusChange(PlayingState::Playing)),
         }
         .into();
-        let video = VideoPlayer::new(&self.frame).width(Length::Fill);
+        let video = VideoPlayer::new(&self.frame)
+            .on_position_changed(GIcedMessage::PositionChanged)
+            .on_duration_changed(GIcedMessage::DurationChanged)
+            .width(Length::Fill);
 
         let pos_status = text(format!("{:.1} s/{:.1} s", current_pos, fullduration));
-        let du_silder = slider(0..=duration, pos, GStreamerIcedMessage::Jump);
+        let du_silder = slider(0..=duration, pos, GIcedMessage::Jump);
 
-        let add_vol = button(text("+")).on_press(GStreamerIcedMessage::VolChange(0.1));
-        let min_vol = button(text("-")).on_press(GStreamerIcedMessage::VolChange(-0.1));
+        let add_vol = button(text("+")).on_press(GIcedMessage::VolChange(0.1));
+        let min_vol = button(text("-")).on_press(GIcedMessage::VolChange(-0.1));
         let volcurrent = self.frame.volume() * 100.0;
 
         let voicetext = text(format!("{:.0} %", volcurrent));
@@ -63,19 +70,27 @@ impl GProgram {
         .into()
     }
 
-    fn update(&mut self, message: GStreamerIcedMessage) -> iced::Task<GStreamerIcedMessage> {
+    fn update(&mut self, message: GIcedMessage) -> iced::Task<GIcedMessage> {
         match message {
-            GStreamerIcedMessage::Jump(step) => {
+            GIcedMessage::Jump(step) => {
                 self.frame
                     .seek(std::time::Duration::from_secs(step as u64 * 8))
                     .unwrap();
                 iced::Task::none()
             }
-            GStreamerIcedMessage::StatusChange(status) => {
+            GIcedMessage::DurationChanged(duration) => {
+                self.duration = duration;
+                iced::Task::none()
+            }
+            GIcedMessage::PositionChanged(position) => {
+                self.position = position;
+                iced::Task::none()
+            }
+            GIcedMessage::StatusChange(status) => {
                 self.frame.set_status(status);
                 iced::Task::none()
             }
-            GStreamerIcedMessage::VolChange(vol) => {
+            GIcedMessage::VolChange(vol) => {
                 let currentvol = self.frame.volume();
                 let newvol = currentvol + vol;
                 if newvol >= 0.0 {
@@ -98,6 +113,10 @@ impl GProgram {
         .unwrap();
         let frame = GVideo::new_url(&url, false).unwrap();
 
-        Self { frame }
+        Self {
+            frame,
+            duration: Default::default(),
+            position: Default::default(),
+        }
     }
 }

@@ -39,7 +39,7 @@ impl GVideoUrl {
             .build();
 
         let state = Arc::new(RwLock::new(
-            crate::State::new().with_info_get_started(islive),
+            crate::State::new().with_try_get_duration(!islive),
         ));
         let state_c = state.clone();
 
@@ -61,6 +61,7 @@ impl GVideoUrl {
                         height: height as _,
                         pixels: map.as_slice().to_owned(),
                     });
+                    state.handle = state.frame.clone().map(|f| f.into());
                     Ok(gst::FlowSuccess::Ok)
                 })
                 .build(),
@@ -89,63 +90,6 @@ impl GVideoUrl {
             state,
         })
     }
-
-    // update for gstreamer base
-    //pub fn update(&mut self, message: GStreamerMessage) -> Task<GStreamerMessage> {
-    //    match message {
-    //        GStreamerMessage::Update => {
-    //            // get the info in the first time of dispatch
-    //            if self.info_get_started {
-    //                loop {
-    //                    self.source
-    //                        .state(gst::ClockTime::from_seconds(5))
-    //                        .0
-    //                        .unwrap();
-
-    //                    if let Some(time) = self.source.query_duration::<gst::ClockTime>() {
-    //                        self.duration = std::time::Duration::from_nanos(time.nseconds());
-    //                        break;
-    //                    }
-    //                }
-    //                self.info_get_started = false;
-    //            }
-    //            if self.duration.as_nanos() != 0 {
-    //                loop {
-    //                    if let Some(time) = self.source.query_position::<gst::ClockTime>() {
-    //                        self.position = std::time::Duration::from_nanos(time.nseconds());
-    //                        break;
-    //                    }
-    //                    self.source
-    //                        .state(gst::ClockTime::from_seconds(5))
-    //                        .0
-    //                        .unwrap();
-    //                }
-    //            }
-    //            self.volume = self.source.property("volume");
-    //        }
-
-    //        GStreamerMessage::PlayStatusChanged(status) => {
-    //            match status {
-    //                PlayStatus::Playing => {
-    //                    self.source.set_state(gst::State::Playing).unwrap();
-    //                }
-    //                PlayStatus::Stop => {
-    //                    self.source.set_state(gst::State::Paused).unwrap();
-    //                }
-    //                _ => {}
-    //            }
-    //            self.play_status = status;
-    //        }
-    //        GStreamerMessage::BusGoToEnd => {
-    //            self.play_status = PlayStatus::End;
-    //        }
-    //        GStreamerMessage::Ready(mut sender) => {
-    //            let rv = self.rv.clone();
-    //            let _ = sender.try_send(rv);
-    //        }
-    //    }
-    //    Task::none()
-    //}
 
     /// get the volume of the video
     pub fn volume(&self) -> f64 {

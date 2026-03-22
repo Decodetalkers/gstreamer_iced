@@ -42,18 +42,19 @@ pub use gstreamer_pipewire::GVideoPipewire;
 #[derive(Debug, Default)]
 struct State {
     pub frame: Option<FrameData>,
+    pub handle: Option<image::Handle>,
     pub duration: std::time::Duration,
     pub position: std::time::Duration,
     pub volume: f64,
-    pub info_get_started: bool,
+    pub get_duration_attempt: bool,
 }
 impl State {
     fn new() -> Self {
         Self::default()
     }
-    fn with_info_get_started(self, info_get_started: bool) -> Self {
+    fn with_try_get_duration(self, info_get_started: bool) -> Self {
         Self {
-            info_get_started,
+            get_duration_attempt: info_get_started,
             ..self
         }
     }
@@ -129,12 +130,18 @@ impl<const X: usize> Drop for GVideo<X> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StreamType {
+    UrlPlayer,
+    PipeWire,
+}
+
 impl<const X: usize> GVideo<X> {
     /// return an [image::Handle], you can use it to make image
     pub fn frame_handle(&self) -> Option<image::Handle> {
         self.state
             .read()
-            .map(|state| state.frame.clone())
+            .map(|state| state.handle.clone())
             .map(|frame| frame.map(|f| f.into()))
             .unwrap_or(None)
     }
@@ -157,10 +164,10 @@ impl<const X: usize> GVideo<X> {
     }
 
     /// get the type name
-    pub fn gstreamer_type(&self) -> &str {
+    pub fn stream_type(&self) -> StreamType {
         match X {
-            0 => "base",
-            1 => "pipewire",
+            0 => StreamType::UrlPlayer,
+            1 => StreamType::PipeWire,
             _ => unreachable!(),
         }
     }
