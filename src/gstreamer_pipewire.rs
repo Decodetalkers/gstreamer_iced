@@ -1,4 +1,4 @@
-use super::{FrameData, GVideo, IcedGStreamerError};
+use super::{FrameData, GVideoInner, IcedGStreamerError};
 use gst::prelude::*;
 use gstreamer as gst;
 use gstreamer_app as gst_app;
@@ -7,7 +7,7 @@ use std::{
     sync::{atomic::AtomicBool, Arc, Mutex, RwLock},
 };
 
-pub type GVideoPipewire = GVideo<1>;
+pub type GVideoPipewire = GVideoInner<1>;
 
 impl GVideoPipewire {
     /// Accept a pipewire stream, it accept a pipewire path, you may can get it from ashpd, it is

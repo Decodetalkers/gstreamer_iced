@@ -5,9 +5,9 @@ use gstreamer_app as gst_app;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, RwLock};
 
-use super::{FrameData, GVideo, IcedGStreamerError, Position};
+use super::{FrameData, GVideoInner, IcedGStreamerError, Position};
 
-pub type GVideoUrl = GVideo<0>;
+pub type GVideoUrl = GVideoInner<0>;
 
 impl GVideoUrl {
     pub fn seek<T>(&self, position: T) -> Result<(), IcedGStreamerError>

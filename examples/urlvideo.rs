@@ -12,7 +12,7 @@ fn main() -> iced::Result {
 
 #[derive(Debug)]
 struct GProgram {
-    frame: GVideoUrl,
+    video: GVideo,
     duration: Duration,
     position: Duration,
 }
@@ -32,14 +32,14 @@ impl GProgram {
         let duration = (fullduration / 8.0) as u8;
         let pos = (current_pos / 8.0) as u8;
 
-        let btn: Element<GIcedMessage> = match self.frame.play_state() {
-            PlayingState::Playing => button(text("[]"))
-                .on_press(GIcedMessage::StatusChange(PlayingState::Paused)),
-            _ => button(text("|>"))
-                .on_press(GIcedMessage::StatusChange(PlayingState::Playing)),
+        let btn: Element<GIcedMessage> = match self.video.play_state() {
+            PlayingState::Playing => {
+                button(text("[]")).on_press(GIcedMessage::StatusChange(PlayingState::Paused))
+            }
+            _ => button(text("|>")).on_press(GIcedMessage::StatusChange(PlayingState::Playing)),
         }
         .into();
-        let video = VideoPlayer::new(&self.frame)
+        let video = VideoPlayer::new(&self.video)
             .on_position_changed(GIcedMessage::PositionChanged)
             .on_duration_changed(GIcedMessage::DurationChanged)
             .width(Length::Fill);
@@ -49,7 +49,7 @@ impl GProgram {
 
         let add_vol = button(text("+")).on_press(GIcedMessage::VolChange(0.1));
         let min_vol = button(text("-")).on_press(GIcedMessage::VolChange(-0.1));
-        let volcurrent = self.frame.volume() * 100.0;
+        let volcurrent = self.video.as_url().volume() * 100.0;
 
         let voicetext = text(format!("{:.0} %", volcurrent));
 
@@ -73,7 +73,8 @@ impl GProgram {
     fn update(&mut self, message: GIcedMessage) -> iced::Task<GIcedMessage> {
         match message {
             GIcedMessage::Jump(step) => {
-                self.frame
+                self.video
+                    .as_url()
                     .seek(std::time::Duration::from_secs(step as u64 * 8))
                     .unwrap();
                 iced::Task::none()
@@ -87,14 +88,14 @@ impl GProgram {
                 iced::Task::none()
             }
             GIcedMessage::StatusChange(status) => {
-                self.frame.set_status(status);
+                self.video.set_state(status);
                 iced::Task::none()
             }
             GIcedMessage::VolChange(vol) => {
-                let currentvol = self.frame.volume();
+                let currentvol = self.video.as_url().volume();
                 let newvol = currentvol + vol;
                 if newvol >= 0.0 {
-                    self.frame.set_volume(newvol);
+                    self.video.as_url().set_volume(newvol);
                 }
                 iced::Task::none()
             }
@@ -110,10 +111,10 @@ impl GProgram {
             "http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4",
         )
         .unwrap();
-        let frame = GVideo::new_url(&url, false).unwrap();
+        let video = GVideo::new_url(&url, false).unwrap();
 
         Self {
-            frame,
+            video,
             duration: Default::default(),
             position: Default::default(),
         }

@@ -10,6 +10,7 @@ use gst::GenericFormattedValue;
 use gstreamer as gst;
 use iced_widget::image;
 use std::hash::Hash;
+use std::os::fd::RawFd;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, RwLock};
 use thiserror::Error;
@@ -73,9 +74,122 @@ impl State {
         }
     }
 }
+#[derive(Debug)]
+pub enum GVideo {
+    UrlPlayer(GVideoUrl),
+    PipeWire(GVideoPipewire),
+    None,
+}
+
+impl GVideo {
+    pub fn new() -> Self {
+        Self::None
+    }
+    pub fn open_pipewire(&mut self, path: u32, fd: RawFd) -> Result<(), IcedGStreamerError> {
+        *self = Self::new_pipewire(path, fd)?;
+        Ok(())
+    }
+    pub fn new_pipewire(path: u32, fd: RawFd) -> Result<Self, IcedGStreamerError> {
+        Ok(Self::PipeWire(GVideoPipewire::new_pipewire(path, fd)?))
+    }
+    pub fn new_url(url: &url::Url, is_live: bool) -> Result<Self, IcedGStreamerError> {
+        Ok(Self::UrlPlayer(GVideoUrl::new_url(url, is_live)?))
+    }
+    pub fn as_url(&self) -> &GVideoUrl {
+        let Self::UrlPlayer(url_player) = &self else {
+            panic!("Not this type");
+        };
+        url_player
+    }
+    fn is_none(&self) -> bool {
+        matches!(self, Self::None)
+    }
+    fn stream_type(&self) -> StreamType {
+        match self {
+            Self::None => StreamType::Empty,
+            Self::PipeWire(_) => StreamType::PipeWire,
+            Self::UrlPlayer(_) => StreamType::UrlPlayer,
+        }
+    }
+    fn frame_data(&self) -> Option<FrameData> {
+        match self {
+            Self::None => None,
+            Self::UrlPlayer(player) => player.frame_data(),
+            Self::PipeWire(pipewire) => pipewire.frame_data(),
+        }
+    }
+
+    fn upload_frame(&self) -> Option<Arc<AtomicBool>> {
+        match self {
+            Self::None => None,
+            Self::UrlPlayer(player) => Some(player.upload_frame.clone()),
+            Self::PipeWire(pipewire) => Some(pipewire.upload_frame.clone()),
+        }
+    }
+    fn alive(&self) -> Option<Arc<AtomicBool>> {
+        match self {
+            Self::None => None,
+            Self::UrlPlayer(player) => Some(player.alive.clone()),
+            Self::PipeWire(pipewire) => Some(pipewire.alive.clone()),
+        }
+    }
+    fn id(&self) -> Option<id::Id> {
+        match self {
+            Self::None => None,
+            Self::UrlPlayer(player) => Some(player.id),
+            Self::PipeWire(pipewire) => Some(pipewire.id),
+        }
+    }
+    fn frame(&self) -> Option<Arc<Mutex<Option<FrameData>>>> {
+        match self {
+            Self::None => None,
+            Self::UrlPlayer(player) => Some(player.frame.clone()),
+            Self::PipeWire(pipewire) => Some(pipewire.frame.clone()),
+        }
+    }
+    fn state(&self) -> Option<Arc<RwLock<State>>> {
+        match self {
+            Self::None => None,
+            Self::UrlPlayer(player) => Some(player.state.clone()),
+            Self::PipeWire(pipewire) => Some(pipewire.state.clone()),
+        }
+    }
+    pub fn play_state(&self) -> gst::State {
+        match self {
+            Self::None => gst::State::Null,
+            Self::UrlPlayer(player) => player.play_state(),
+            Self::PipeWire(pipewire) => pipewire.play_state(),
+        }
+    }
+    fn source(&self) -> Option<&gst::Bin> {
+        match self {
+            Self::None => None,
+            Self::UrlPlayer(player) => Some(&player.source),
+            Self::PipeWire(pipewire) => Some(&pipewire.source),
+        }
+    }
+    fn bus(&self) -> Option<&gst::Bus> {
+        match self {
+            Self::None => None,
+            Self::UrlPlayer(player) => Some(&player.bus),
+            Self::PipeWire(pipewire) => Some(&pipewire.bus),
+        }
+    }
+    pub fn set_state(&self, state: gst::State) {
+        match self {
+            Self::None => {}
+            Self::UrlPlayer(player) => {
+                player.set_state(state);
+            }
+            Self::PipeWire(pipewire) => {
+                pipewire.set_state(state);
+            }
+        }
+    }
+}
 
 #[derive(Debug)]
-pub struct GVideo<const X: usize> {
+pub struct GVideoInner<const X: usize> {
     bus: gst::Bus,
     source: gst::Bin,
     state: Arc<RwLock<State>>,
@@ -140,7 +254,7 @@ impl From<u64> for Position {
     }
 }
 
-impl<const X: usize> Drop for GVideo<X> {
+impl<const X: usize> Drop for GVideoInner<X> {
     fn drop(&mut self) {
         self.source
             .set_state(gst::State::Null)
@@ -152,9 +266,10 @@ impl<const X: usize> Drop for GVideo<X> {
 pub enum StreamType {
     UrlPlayer,
     PipeWire,
+    Empty,
 }
 
-impl<const X: usize> GVideo<X> {
+impl<const X: usize> GVideoInner<X> {
     /// return an [image::Handle], you can use it to make image
     pub fn frame_handle(&self) -> Option<image::Handle> {
         self.frame_data().map(|frame| frame.into())
@@ -182,7 +297,7 @@ impl<const X: usize> GVideo<X> {
             _ => unreachable!(),
         }
     }
-    pub fn set_status(&self, state: PlayingState) {
+    pub fn set_state(&self, state: PlayingState) {
         match state {
             PlayingState::Playing | PlayingState::Paused => {
                 self.source.set_state(state).unwrap();

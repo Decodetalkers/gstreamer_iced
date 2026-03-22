@@ -51,7 +51,7 @@ fn main() -> iced::Result {
 }
 
 struct GProgram {
-    frame: Option<GVideoPipewire>,
+    video: GVideo,
     fd: Option<Arc<OwnedFd>>,
 }
 #[derive(Debug, Clone)]
@@ -62,24 +62,14 @@ enum GStreamerIcedMessage {
 
 impl GProgram {
     fn view(&'_ self) -> iced::Element<'_, GStreamerIcedMessage> {
-        let vframe = match &self.frame {
-            Some(frame) => frame,
-            None => {
-                return container(text("loading"))
-                    .center_y(Length::Fill)
-                    .center_x(Length::Fill)
-                    .into();
-            }
-        };
-
-        let btn: iced::Element<GStreamerIcedMessage> = match vframe.play_state() {
+        let btn: iced::Element<GStreamerIcedMessage> = match self.video.play_state() {
             PlayingState::Playing => button(text("[]"))
                 .on_press(GStreamerIcedMessage::StatusChange(PlayingState::Paused)),
             _ => button(text("|>"))
                 .on_press(GStreamerIcedMessage::StatusChange(PlayingState::Playing)),
         }
         .into();
-        let video = VideoPlayer::new(&vframe).width(Length::Fill);
+        let video = VideoPlayer::new(&self.video).width(Length::Fill);
 
         container(column![
             video,
@@ -94,16 +84,13 @@ impl GProgram {
 
     fn update(&mut self, message: GStreamerIcedMessage) -> iced::Task<GStreamerIcedMessage> {
         match message {
-            GStreamerIcedMessage::StatusChange(status) => match &self.frame {
-                Some(frame) => {
-                    frame.set_status(status);
-                    iced::Task::none()
-                }
-                None => iced::Task::none(),
-            },
+            GStreamerIcedMessage::StatusChange(state) => {
+                self.video.set_state(state);
+                Task::none()
+            }
             GStreamerIcedMessage::Ready((path, fd)) => {
                 self.fd = Some(fd.clone());
-                self.frame = Some(GVideo::new_pipewire(path, fd.as_raw_fd()).unwrap());
+                self.video.open_pipewire(path, fd.as_raw_fd()).unwrap();
                 Task::none()
             }
         }
@@ -116,7 +103,7 @@ impl GProgram {
     fn new() -> (Self, iced::Task<GStreamerIcedMessage>) {
         (
             Self {
-                frame: None,
+                video: GVideo::new(),
                 fd: None,
             },
             iced::Task::perform(

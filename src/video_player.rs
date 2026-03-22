@@ -11,14 +11,8 @@ use iced_core::{layout, Widget};
 use iced_wgpu::primitive::Renderer as PrimitiveRenderer;
 use std::time::Duration;
 
-pub struct VideoPlayer<
-    'a,
-    const X: usize,
-    Message,
-    Theme = iced_core::Theme,
-    Renderer = iced_renderer::Renderer,
-> {
-    video: &'a GVideo<X>,
+pub struct VideoPlayer<'a, Message, Theme = iced_core::Theme, Renderer = iced_renderer::Renderer> {
+    video: &'a GVideo,
     content_fit: iced_core::ContentFit,
     width: iced_core::Length,
     height: iced_core::Length,
@@ -31,11 +25,11 @@ pub struct VideoPlayer<
     _renderer: PhantomData<Renderer>,
 }
 
-impl<'a, const X: usize, Message, Theme, Renderer> VideoPlayer<'a, X, Message, Theme, Renderer>
+impl<'a, Message, Theme, Renderer> VideoPlayer<'a, Message, Theme, Renderer>
 where
     Renderer: PrimitiveRenderer,
 {
-    pub fn new(video: &'a GVideo<X>) -> Self {
+    pub fn new(video: &'a GVideo) -> Self {
         Self {
             video,
             content_fit: iced_core::ContentFit::default(),
@@ -98,8 +92,8 @@ where
         }
     }
 }
-impl<const X: usize, Message, Theme, Renderer> Widget<Message, Theme, Renderer>
-    for VideoPlayer<'_, X, Message, Theme, Renderer>
+impl<Message, Theme, Renderer> Widget<Message, Theme, Renderer>
+    for VideoPlayer<'_, Message, Theme, Renderer>
 where
     Message: Clone,
     Renderer: PrimitiveRenderer,
@@ -175,15 +169,19 @@ where
 
         let drawing_bounds = iced_core::Rectangle::new(position, final_size);
 
-        let upload_frame = self.video.upload_frame.swap(false, Ordering::SeqCst);
+        let upload_frame = self
+            .video
+            .upload_frame()
+            .unwrap()
+            .swap(false, Ordering::SeqCst);
 
         let render = |renderer: &mut Renderer| {
             renderer.draw_primitive(
                 drawing_bounds,
                 VideoPrimitive::new(
-                    *self.video.id,
-                    self.video.alive.clone(),
-                    self.video.frame.clone(),
+                    *self.video.id().unwrap(),
+                    self.video.alive().unwrap().clone(),
+                    self.video.frame().unwrap(),
                     upload_frame,
                 ),
             );
@@ -210,17 +208,27 @@ where
         else {
             return;
         };
-        let mut state = self.video.state.write().unwrap();
+        if self.video.is_none() {
+            return;
+        }
+        let state_o = self.video.state().unwrap();
+        let mut state = state_o.write().unwrap();
         if self.video.stream_type() == StreamType::UrlPlayer {
             if state.get_duration_attempt && self.video.play_state() == gst::State::Playing {
                 loop {
                     self.video
-                        .source
+                        .source()
+                        .unwrap()
                         .state(gst::ClockTime::from_seconds(1))
                         .0
                         .unwrap();
 
-                    if let Some(time) = self.video.source.query_duration::<gst::ClockTime>() {
+                    if let Some(time) = self
+                        .video
+                        .source()
+                        .unwrap()
+                        .query_duration::<gst::ClockTime>()
+                    {
                         state.duration = std::time::Duration::from_nanos(time.nseconds());
                         if let Some(on_duration_changed) = &self.on_duration_changed {
                             shell.publish(on_duration_changed(state.duration));
@@ -232,7 +240,12 @@ where
             }
             if state.duration.as_nanos() != 0 {
                 loop {
-                    if let Some(time) = self.video.source.query_position::<gst::ClockTime>() {
+                    if let Some(time) = self
+                        .video
+                        .source()
+                        .unwrap()
+                        .query_position::<gst::ClockTime>()
+                    {
                         state.position = std::time::Duration::from_nanos(time.nseconds());
                         if let Some(on_position_changed) = &self.on_position_changed {
                             shell.publish(on_position_changed(state.position));
@@ -240,20 +253,22 @@ where
                         break;
                     }
                     self.video
-                        .source
+                        .source()
+                        .unwrap()
                         .state(gst::ClockTime::from_seconds(5))
                         .0
                         .unwrap();
                 }
             }
-            state.volume = self.video.source.property("volume");
+            state.volume = self.video.source().unwrap().property("volume");
         }
         if self.video.play_state() == gst::State::Playing {
             shell.request_redraw();
         }
         while let Some(msg) = self
             .video
-            .bus
+            .bus()
+            .unwrap()
             .pop_filtered(&[gst::MessageType::Error, gst::MessageType::Eos])
         {
             match msg.view() {
@@ -266,7 +281,7 @@ where
                 gst::MessageView::Eos(_eos) => {
                     if let Some(on_end_of_stream) = self.on_end_of_stream.clone() {
                         shell.publish(on_end_of_stream);
-                        self.video.alive.swap(false, Ordering::SeqCst);
+                        self.video.alive().unwrap().swap(false, Ordering::SeqCst);
                     }
                 }
                 _ => {}
@@ -275,15 +290,14 @@ where
     }
 }
 
-impl<'a, const X: usize, Message, Theme, Renderer>
-    From<VideoPlayer<'a, X, Message, Theme, Renderer>>
+impl<'a, Message, Theme, Renderer> From<VideoPlayer<'a, Message, Theme, Renderer>>
     for iced_core::Element<'a, Message, Theme, Renderer>
 where
     Message: 'a + Clone,
     Theme: 'a,
     Renderer: 'a + PrimitiveRenderer,
 {
-    fn from(video_player: VideoPlayer<'a, X, Message, Theme, Renderer>) -> Self {
+    fn from(video_player: VideoPlayer<'a, Message, Theme, Renderer>) -> Self {
         Self::new(video_player)
     }
 }
