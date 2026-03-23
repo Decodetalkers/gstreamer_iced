@@ -10,6 +10,7 @@ use gst::GenericFormattedValue;
 use gstreamer as gst;
 use std::hash::Hash;
 use std::os::fd::RawFd;
+use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, RwLock};
@@ -83,21 +84,63 @@ impl GVideo {
         *self = Self::new_pipewire(path, fd)?;
         Ok(())
     }
+    pub fn open_pipewire_and_record<P: AsRef<Path>>(
+        &mut self,
+        path: u32,
+        fd: RawFd,
+        file: P,
+    ) -> Result<(), IcedGStreamerError> {
+        *self = Self::new_pipewire_and_record(path, fd, file)?;
+        Ok(())
+    }
     pub fn open_url(&mut self, url: &url::Url, is_live: bool) -> Result<(), IcedGStreamerError> {
         *self = Self::new_url(url, is_live)?;
+        Ok(())
+    }
+    pub fn open_url_and_record<P: AsRef<Path>>(
+        &mut self,
+        url: &url::Url,
+        is_live: bool,
+        file: P,
+    ) -> Result<(), IcedGStreamerError> {
+        *self = Self::new_url_and_record(url, is_live, file)?;
         Ok(())
     }
     pub fn new_pipewire(path: u32, fd: RawFd) -> Result<Self, IcedGStreamerError> {
         Ok(Self::PipeWire(GVideoPipewire::new_pipewire(path, fd)?))
     }
+    pub fn new_pipewire_and_record<P: AsRef<Path>>(
+        path: u32,
+        fd: RawFd,
+        file: P,
+    ) -> Result<Self, IcedGStreamerError> {
+        Ok(Self::PipeWire(GVideoPipewire::new_pipewire_and_record(
+            path, fd, file,
+        )?))
+    }
     pub fn new_url(url: &url::Url, is_live: bool) -> Result<Self, IcedGStreamerError> {
         Ok(Self::UrlPlayer(GVideoUrl::new_url(url, is_live)?))
+    }
+    pub fn new_url_and_record<P: AsRef<Path>>(
+        url: &url::Url,
+        is_live: bool,
+        file: P,
+    ) -> Result<Self, IcedGStreamerError> {
+        Ok(Self::UrlPlayer(GVideoUrl::new_url_and_record(
+            url, is_live, file,
+        )?))
     }
     pub fn as_url(&self) -> &GVideoUrl {
         let Self::UrlPlayer(url_player) = &self else {
             panic!("Not this type");
         };
         url_player
+    }
+    pub fn as_pw(&self) -> &GVideoPipewire {
+        let Self::PipeWire(pw_instance) = &self else {
+            panic!("Not this type");
+        };
+        pw_instance
     }
     fn is_none(&self) -> bool {
         matches!(self, Self::None)
@@ -219,6 +262,10 @@ pub enum IcedGStreamerError {
     Duration,
     #[error("failed to sync with playback")]
     Sync,
+    #[error("NO extension")]
+    NoExtension,
+    #[error("Unsupported extension")]
+    UnsupportedExtension,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

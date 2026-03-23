@@ -97,7 +97,9 @@ impl GProgram {
             }
             GStreamerIcedMessage::Ready((path, fd)) => {
                 self.fd = Some(fd.clone());
-                self.video.open_pipewire(path, fd.as_raw_fd()).unwrap();
+                self.video
+                    .open_pipewire_and_record(path, fd.as_raw_fd(), "record.mp4")
+                    .unwrap();
                 self.state = self.video.play_state();
                 Task::none()
             }

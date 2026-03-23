@@ -4,6 +4,7 @@ use std::sync::atomic::Ordering;
 use crate::pipeline::VideoPrimitive;
 use crate::GVideo;
 use crate::StreamType;
+use gst::State;
 use gstreamer as gst;
 use gstreamer::glib;
 use gstreamer::prelude::*;
@@ -21,6 +22,7 @@ pub struct VideoPlayer<'a, Message, Theme = iced_core::Theme, Renderer = iced_re
     on_error: Option<Box<dyn Fn(&glib::Error) -> Message + 'a>>,
     on_duration_changed: Option<Box<dyn Fn(Duration) -> Message + 'a>>,
     on_position_changed: Option<Box<dyn Fn(Duration) -> Message + 'a>>,
+    on_state_changed: Option<Box<dyn Fn(State) -> Message + 'a>>,
     _theme: PhantomData<Theme>,
     _message: PhantomData<Message>,
     _renderer: PhantomData<Renderer>,
@@ -40,6 +42,7 @@ where
             on_end_of_stream: None,
             on_duration_changed: None,
             on_position_changed: None,
+            on_state_changed: None,
             _theme: PhantomData,
             _message: PhantomData,
             _renderer: PhantomData,
@@ -80,6 +83,15 @@ where
     {
         VideoPlayer {
             on_duration_changed: Some(Box::new(on_duration_changed)),
+            ..self
+        }
+    }
+    pub fn on_state_changed<F>(self, on_state_changed: F) -> Self
+    where
+        F: 'a + Fn(State) -> Message,
+    {
+        VideoPlayer {
+            on_state_changed: Some(Box::new(on_state_changed)),
             ..self
         }
     }
@@ -270,7 +282,7 @@ where
             .video
             .bus()
             .unwrap()
-            .pop_filtered(&[gst::MessageType::Error, gst::MessageType::Eos])
+            .pop_filtered(&[gst::MessageType::Error, gst::MessageType::Eos, gst::MessageType::StateChanged])
         {
             match msg.view() {
                 gst::MessageView::Error(err) => {
@@ -280,9 +292,22 @@ where
                     };
                 }
                 gst::MessageView::Eos(_eos) => {
+                    self.video
+                        .source()
+                        .unwrap()
+                        .set_state(gst::State::Null)
+                        .unwrap();
+                    if let Some(on_state_changed) = &self.on_state_changed {
+                        shell.publish(on_state_changed(gst::State::Null));
+                    }
                     if let Some(on_end_of_stream) = self.on_end_of_stream.clone() {
                         shell.publish(on_end_of_stream);
                         self.video.alive().unwrap().swap(false, Ordering::SeqCst);
+                    }
+                }
+                gstreamer::MessageView::StateChanged(change) => {
+                    if let Some(on_state_changed) = &self.on_state_changed {
+                        shell.publish(on_state_changed(change.current()));
                     }
                 }
                 _ => {}
