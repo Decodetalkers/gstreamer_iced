@@ -22,6 +22,9 @@ pub mod reexport {
 pub use video_player::VideoPlayer;
 
 pub use gst::State as PlayingState;
+
+/// the data of the frame
+/// NOTE: it is NV12, so not rgba
 #[derive(Debug, Clone)]
 pub struct FrameData {
     pub pixels: Vec<u8>,
@@ -63,6 +66,9 @@ impl State {
         }
     }
 }
+/// The container for the gstreamer
+/// Current it supports UrlPlayer and Pipewire
+/// And also a empty [GVideo::None]
 #[derive(Debug)]
 pub enum GVideo {
     UrlPlayer(GVideoUrl),
@@ -78,6 +84,7 @@ impl Default for GVideo {
 
 mod seal {
     use super::*;
+    /// The builder to modify a [GVideo], whose inner will be [GVideoUrl]
     #[derive(Debug)]
     pub struct UrlBinBuilderRef<'a> {
         video: &'a mut GVideo,
@@ -95,14 +102,19 @@ mod seal {
                 file: None,
             }
         }
+        /// save it to a file
         pub fn save_file<P: AsRef<Path>>(mut self, file: P) -> Self {
             self.file = Some(file.as_ref().to_path_buf());
             self
         }
+
+        /// maybe save it to a file
         pub fn save_file_maybe<P: AsRef<Path>>(mut self, file: Option<P>) -> Self {
             self.file = file.map(|f| f.as_ref().to_path_buf());
             self
         }
+
+        /// finish the modification
         pub fn finish(self) -> Result<(), IcedGStreamerError> {
             *self.video = match self.file {
                 Some(file) => GVideo::UrlPlayer(GVideoUrl::new_url_and_record(
@@ -115,6 +127,7 @@ mod seal {
             Ok(())
         }
     }
+    /// The builder to modify a [GVideo], whose inner will be [GVideoPipewire]
     #[derive(Debug)]
     pub struct PipeWireBuilderRef<'a> {
         video: &'a mut GVideo,
@@ -132,14 +145,17 @@ mod seal {
                 file: None,
             }
         }
+        /// save it to a file
         pub fn save_file<P: AsRef<Path>>(mut self, file: P) -> Self {
             self.file = Some(file.as_ref().to_path_buf());
             self
         }
+        /// maybe save it to a file
         pub fn save_file_maybe<P: AsRef<Path>>(mut self, file: Option<P>) -> Self {
             self.file = file.map(|f| f.as_ref().to_path_buf());
             self
         }
+        /// finish the modification
         pub fn finish(self) -> Result<(), IcedGStreamerError> {
             *self.video = match self.file {
                 Some(file) => GVideo::PipeWire(GVideoPipewire::new_pipewire_and_record(
@@ -151,6 +167,7 @@ mod seal {
         }
     }
 
+    /// The builder to build a [GVideo], whose inner is [GVideoPipewire]
     #[derive(Debug)]
     pub struct PipeWireBuilder {
         video: GVideo,
@@ -168,14 +185,17 @@ mod seal {
                 file: None,
             }
         }
+        /// save it to a file
         pub fn save_file<P: AsRef<Path>>(mut self, file: P) -> Self {
             self.file = Some(file.as_ref().to_path_buf());
             self
         }
+        /// maybe save it to a file
         pub fn save_file_maybe<P: AsRef<Path>>(mut self, file: Option<P>) -> Self {
             self.file = file.map(|f| f.as_ref().to_path_buf());
             self
         }
+        /// build a [GVideo]
         pub fn build(mut self) -> Result<GVideo, IcedGStreamerError> {
             self.video = match self.file {
                 Some(file) => GVideo::PipeWire(GVideoPipewire::new_pipewire_and_record(
@@ -187,6 +207,7 @@ mod seal {
         }
     }
 
+    /// The builder to build a [GVideo], whose inner is [GVideoUrl]
     #[derive(Debug)]
     pub struct UrlBinBuilder {
         video: GVideo,
@@ -204,14 +225,19 @@ mod seal {
                 file: None,
             }
         }
+
+        /// save it to a file
         pub fn save_file<P: AsRef<Path>>(mut self, file: P) -> Self {
             self.file = Some(file.as_ref().to_path_buf());
             self
         }
+
+        /// maybe save it to a file
         pub fn save_file_maybe<P: AsRef<Path>>(mut self, file: Option<P>) -> Self {
             self.file = file.map(|f| f.as_ref().to_path_buf());
             self
         }
+        /// build a [GVideo]
         pub fn build(mut self) -> Result<GVideo, IcedGStreamerError> {
             self.video = match self.file {
                 Some(file) => GVideo::UrlPlayer(GVideoUrl::new_url_and_record(
@@ -232,28 +258,36 @@ impl GVideo {
     pub fn empty() -> Self {
         Self::None
     }
+
+    /// create a new [PipeWireBuilderRef], this is used to rebuild a [GVideo]
     pub fn open_pipewire<'a>(&'a mut self, path: u32, fd: RawFd) -> PipeWireBuilderRef<'a> {
         PipeWireBuilderRef::new(self, path, fd)
     }
 
+    /// create a new [UrlBinBuilderRef], this is used to rebuild a [GVideo]
     pub fn open_url<'a>(&'a mut self, url: url::Url, is_live: bool) -> UrlBinBuilderRef<'a> {
         UrlBinBuilderRef::new(self, url, is_live)
     }
 
+    /// create a new [PipeWireBuilder], this is used to build a [GVideo]
     pub fn new_pipewire(path: u32, fd: RawFd) -> PipeWireBuilder {
         PipeWireBuilder::new(path, fd)
     }
 
+    /// create a new [UrlBinBuilder], this is used to build a [GVideo]
     pub fn new_url(url: url::Url, is_live: bool) -> UrlBinBuilder {
         UrlBinBuilder::new(url, is_live)
     }
 
+    /// cast the file from [GVideo] to [GVideoUrl], if not match, then panic
     pub fn as_url(&self) -> &GVideoUrl {
         let Self::UrlPlayer(url_player) = &self else {
             panic!("Not this type");
         };
         url_player
     }
+
+    /// cast the file from [GVideo] to [GVideoPipewire], if not match, then panic
     pub fn as_pw(&self) -> &GVideoPipewire {
         let Self::PipeWire(pw_instance) = &self else {
             panic!("Not this type");
@@ -347,6 +381,7 @@ impl GVideo {
     }
 }
 
+/// The main container for a gstreamer task
 #[derive(Debug)]
 pub struct GVideoInner<const X: usize> {
     bus: gst::Bus,

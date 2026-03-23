@@ -30,14 +30,16 @@ struct GProgram {
     video: GVideo,
     duration: Duration,
     position: Duration,
+    state: gstreamer::State,
 }
 #[derive(Debug, Clone)]
 enum GIcedMessage {
     Jump(u8),
     VolChange(f64),
-    StatusChange(PlayingState),
+    RequestStateChange(PlayingState),
     DurationChanged(Duration),
     PositionChanged(Duration),
+    StateChanged(gstreamer::State),
 }
 
 impl GProgram {
@@ -47,16 +49,18 @@ impl GProgram {
         let duration = (fullduration / 8.0) as u8;
         let pos = (current_pos / 8.0) as u8;
 
-        let btn: Element<GIcedMessage> = match self.video.play_state() {
-            PlayingState::Playing => {
-                button(text("[]")).on_press(GIcedMessage::StatusChange(PlayingState::Paused))
+        let btn: Element<GIcedMessage> =
+            match self.state {
+                PlayingState::Playing => button(text("[]"))
+                    .on_press(GIcedMessage::RequestStateChange(PlayingState::Paused)),
+                _ => button(text("|>"))
+                    .on_press(GIcedMessage::RequestStateChange(PlayingState::Playing)),
             }
-            _ => button(text("|>")).on_press(GIcedMessage::StatusChange(PlayingState::Playing)),
-        }
-        .into();
+            .into();
         let video = VideoPlayer::new(&self.video)
             .on_position_changed(GIcedMessage::PositionChanged)
             .on_duration_changed(GIcedMessage::DurationChanged)
+            .on_state_changed(GIcedMessage::StateChanged)
             .width(Length::Fill);
 
         let pos_status = text(format!("{:.1} s/{:.1} s", current_pos, fullduration));
@@ -102,7 +106,7 @@ impl GProgram {
                 self.position = position;
                 iced::Task::none()
             }
-            GIcedMessage::StatusChange(status) => {
+            GIcedMessage::RequestStateChange(status) => {
                 self.video.set_state(status);
                 iced::Task::none()
             }
@@ -112,6 +116,10 @@ impl GProgram {
                 if newvol >= 0.0 {
                     self.video.as_url().set_volume(newvol);
                 }
+                iced::Task::none()
+            }
+            GIcedMessage::StateChanged(state) => {
+                self.state = state;
                 iced::Task::none()
             }
         }
@@ -126,9 +134,10 @@ impl GProgram {
             "http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4",
         )
         .unwrap();
-        let video = GVideo::new_url(&url, false).unwrap();
+        let video = GVideo::new_url(url, false).build().unwrap();
 
         Self {
+            state: video.play_state(),
             video,
             duration: Default::default(),
             position: Default::default(),
@@ -196,23 +205,27 @@ fn main() -> iced::Result {
 struct GProgram {
     video: GVideo,
     fd: Option<Arc<OwnedFd>>,
+    state: gstreamer::State,
 }
+
 #[derive(Debug, Clone)]
-enum GStreamerIcedMessage {
+enum GIcedMessage {
     Ready((u32, Arc<OwnedFd>)),
-    StatusChange(PlayingState),
+    StopRecording,
+    StateChanged(gstreamer::State),
 }
 
 impl GProgram {
-    fn view(&'_ self) -> iced::Element<'_, GStreamerIcedMessage> {
-        let btn: iced::Element<GStreamerIcedMessage> = match self.video.play_state() {
-            PlayingState::Playing => button(text("[]"))
-                .on_press(GStreamerIcedMessage::StatusChange(PlayingState::Paused)),
-            _ => button(text("|>"))
-                .on_press(GStreamerIcedMessage::StatusChange(PlayingState::Playing)),
-        }
-        .into();
-        let video = VideoPlayer::new(&self.video).width(Length::Fill);
+    fn view(&'_ self) -> iced::Element<'_, GIcedMessage> {
+        let btn = button(text("[]")).on_press_maybe(if self.state == PlayingState::Playing {
+            Some(GIcedMessage::StopRecording)
+        } else {
+            None
+        });
+
+        let video = VideoPlayer::new(&self.video)
+            .on_state_changed(GIcedMessage::StateChanged)
+            .width(Length::Fill);
 
         container(column![
             video,
@@ -225,15 +238,23 @@ impl GProgram {
         .into()
     }
 
-    fn update(&mut self, message: GStreamerIcedMessage) -> iced::Task<GStreamerIcedMessage> {
+    fn update(&mut self, message: GIcedMessage) -> iced::Task<GIcedMessage> {
         match message {
-            GStreamerIcedMessage::StatusChange(state) => {
-                self.video.set_state(state);
+            GIcedMessage::StopRecording => {
+                self.video.as_pw().stop_recording();
                 Task::none()
             }
-            GStreamerIcedMessage::Ready((path, fd)) => {
+            GIcedMessage::StateChanged(state) => {
+                self.state = state;
+                Task::none()
+            }
+            GIcedMessage::Ready((path, fd)) => {
                 self.fd = Some(fd.clone());
-                self.video.open_pipewire(path, fd.as_raw_fd()).unwrap();
+                self.video
+                    .open_pipewire(path, fd.as_raw_fd())
+                    .finish()
+                    .unwrap();
+                self.state = self.video.play_state();
                 Task::none()
             }
         }
@@ -243,16 +264,15 @@ impl GProgram {
         "Iced Gstreamer".to_string()
     }
 
-    fn new() -> (Self, iced::Task<GStreamerIcedMessage>) {
+    fn new() -> (Self, iced::Task<GIcedMessage>) {
+        let video = GVideo::empty();
         (
             Self {
-                video: GVideo::new(),
                 fd: None,
+                state: video.play_state(),
+                video,
             },
-            iced::Task::perform(
-                async { get_path().await.unwrap() },
-                GStreamerIcedMessage::Ready,
-            ),
+            iced::Task::perform(async { get_path().await.unwrap() }, GIcedMessage::Ready),
         )
     }
 }

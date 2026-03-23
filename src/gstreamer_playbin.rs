@@ -8,9 +8,12 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use super::{FrameData, GVideoInner, IcedGStreamerError, Position};
 
+/// The main container for a gstreamer task
+/// For playbin url
 pub type GVideoUrl = GVideoInner<0>;
 
 impl GVideoUrl {
+    /// Seak to a position
     pub fn seek<T>(&self, position: T) -> Result<(), IcedGStreamerError>
     where
         T: Into<Position>,

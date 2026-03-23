@@ -12,6 +12,7 @@ use iced_core::{layout, Widget};
 use iced_wgpu::primitive::Renderer as PrimitiveRenderer;
 use std::time::Duration;
 
+/// VideoPlayer, whose backend is gstreamer
 pub struct VideoPlayer<'a, Message, Theme = iced_core::Theme, Renderer = iced_renderer::Renderer> {
     video: &'a GVideo,
     content_fit: iced_core::ContentFit,
@@ -32,6 +33,7 @@ impl<'a, Message, Theme, Renderer> VideoPlayer<'a, Message, Theme, Renderer>
 where
     Renderer: PrimitiveRenderer,
 {
+    /// create a new video player
     pub fn new(video: &'a GVideo) -> Self {
         Self {
             video,
@@ -49,18 +51,23 @@ where
         }
     }
 
+    /// set the width of the [VideoPlayer]
     pub fn width(self, width: impl Into<iced_core::Length>) -> Self {
         Self {
             width: width.into(),
             ..self
         }
     }
+
+    /// set the height of the [VideoPlayer]
     pub fn height(self, height: impl Into<iced_core::Length>) -> Self {
         Self {
             height: height.into(),
             ..self
         }
     }
+
+    ///  When gstreamer report an error
     pub fn on_error<F>(self, on_error: F) -> Self
     where
         F: 'a + Fn(&glib::Error) -> Message,
@@ -70,6 +77,7 @@ where
             ..self
         }
     }
+
     /// Message to send when the video reaches the end of stream (i.e., the video ends).
     pub fn on_end_of_stream(self, on_end_of_stream: Message) -> Self {
         VideoPlayer {
@@ -77,6 +85,8 @@ where
             ..self
         }
     }
+
+    /// The duration changed during playing
     pub fn on_duration_changed<F>(self, on_duration_changed: F) -> Self
     where
         F: 'a + Fn(Duration) -> Message,
@@ -86,6 +96,8 @@ where
             ..self
         }
     }
+
+    /// The play state changed during playing
     pub fn on_state_changed<F>(self, on_state_changed: F) -> Self
     where
         F: 'a + Fn(State) -> Message,
@@ -95,6 +107,8 @@ where
             ..self
         }
     }
+
+    /// The position changed during playing
     pub fn on_position_changed<F>(self, on_position_changed: F) -> Self
     where
         F: 'a + Fn(Duration) -> Message,
@@ -278,12 +292,11 @@ where
         if self.video.play_state() == gst::State::Playing {
             shell.request_redraw();
         }
-        while let Some(msg) = self
-            .video
-            .bus()
-            .unwrap()
-            .pop_filtered(&[gst::MessageType::Error, gst::MessageType::Eos, gst::MessageType::StateChanged])
-        {
+        while let Some(msg) = self.video.bus().unwrap().pop_filtered(&[
+            gst::MessageType::Error,
+            gst::MessageType::Eos,
+            gst::MessageType::StateChanged,
+        ]) {
             match msg.view() {
                 gst::MessageView::Error(err) => {
                     log::error!("bus returned an error: {err}");

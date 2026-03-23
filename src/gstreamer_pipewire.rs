@@ -8,9 +8,12 @@ use std::{
     sync::{atomic::AtomicBool, Arc, Mutex, RwLock},
 };
 
+/// The main container for a gstreamer task
+/// For pipewire
 pub type GVideoPipewire = GVideoInner<1>;
 
 impl GVideoPipewire {
+    /// Stop recording the file
     pub fn stop_recording(&self) {
         self.source.send_event(gst::event::Eos::new());
     }
