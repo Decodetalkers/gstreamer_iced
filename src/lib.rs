@@ -80,15 +80,6 @@ impl GVideo {
     pub fn empty() -> Self {
         Self::None
     }
-
-    pub fn stop_recording(&self) {
-        match self {
-            Self::None => {}
-            Self::PipeWire(pw) => pw.stop_recording(),
-            Self::UrlPlayer(player) => player.stop_recording(),
-        }
-    }
-
     pub fn open_pipewire(&mut self, path: u32, fd: RawFd) -> Result<(), IcedGStreamerError> {
         *self = Self::new_pipewire(path, fd)?;
         Ok(())
@@ -352,8 +343,5 @@ impl<const X: usize> GVideoInner<X> {
             }
             _ => {}
         }
-    }
-    pub fn stop_recording(&self) {
-        self.source.send_event(gst::event::Eos::new());
     }
 }
