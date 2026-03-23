@@ -222,7 +222,7 @@ impl GVideoUrl {
 
         Ok(Self {
             bus: source.bus().unwrap(),
-            source: source.into(),
+            source,
             state,
             upload_frame,
             frame,

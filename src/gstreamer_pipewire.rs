@@ -11,9 +11,7 @@ use std::{
 pub type GVideoPipewire = GVideoInner<1>;
 
 impl GVideoPipewire {
-    pub fn stop_record(&self) {
-        self.source.send_event(gst::event::Eos::new());
-    }
+
     /// Accept a pipewire stream, it accept a pipewire path, you may can get it from ashpd, it is
     /// called node.
     pub(crate) fn new_pipewire(path: u32, fd: RawFd) -> Result<Self, IcedGStreamerError> {

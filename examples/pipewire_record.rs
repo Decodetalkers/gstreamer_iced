@@ -56,22 +56,22 @@ struct GProgram {
     state: gstreamer::State,
 }
 #[derive(Debug, Clone)]
-enum GStreamerIcedMessage {
+enum GIcedMessage {
     Ready((u32, Arc<OwnedFd>)),
     StopRecording,
     StateChanged(gstreamer::State),
 }
 
 impl GProgram {
-    fn view(&'_ self) -> iced::Element<'_, GStreamerIcedMessage> {
+    fn view(&'_ self) -> iced::Element<'_, GIcedMessage> {
         let btn = button(text("[]")).on_press_maybe(if self.state == PlayingState::Playing {
-            Some(GStreamerIcedMessage::StopRecording)
+            Some(GIcedMessage::StopRecording)
         } else {
             None
         });
 
         let video = VideoPlayer::new(&self.video)
-            .on_state_changed(GStreamerIcedMessage::StateChanged)
+            .on_state_changed(GIcedMessage::StateChanged)
             .width(Length::Fill);
 
         container(column![
@@ -85,17 +85,17 @@ impl GProgram {
         .into()
     }
 
-    fn update(&mut self, message: GStreamerIcedMessage) -> iced::Task<GStreamerIcedMessage> {
+    fn update(&mut self, message: GIcedMessage) -> iced::Task<GIcedMessage> {
         match message {
-            GStreamerIcedMessage::StopRecording => {
-                self.video.as_pw().stop_record();
+            GIcedMessage::StopRecording => {
+                self.video.as_pw().stop_recording();
                 Task::none()
             }
-            GStreamerIcedMessage::StateChanged(state) => {
+            GIcedMessage::StateChanged(state) => {
                 self.state = state;
                 Task::none()
             }
-            GStreamerIcedMessage::Ready((path, fd)) => {
+            GIcedMessage::Ready((path, fd)) => {
                 self.fd = Some(fd.clone());
                 self.video
                     .open_pipewire_and_record(path, fd.as_raw_fd(), "record.mp4")
@@ -110,7 +110,7 @@ impl GProgram {
         "Iced Gstreamer".to_string()
     }
 
-    fn new() -> (Self, iced::Task<GStreamerIcedMessage>) {
+    fn new() -> (Self, iced::Task<GIcedMessage>) {
         let video = GVideo::empty();
         (
             Self {
@@ -120,7 +120,7 @@ impl GProgram {
             },
             iced::Task::perform(
                 async { get_path().await.unwrap() },
-                GStreamerIcedMessage::Ready,
+                GIcedMessage::Ready,
             ),
         )
     }

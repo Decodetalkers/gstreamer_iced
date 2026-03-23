@@ -25,6 +25,7 @@ enum GIcedMessage {
     DurationChanged(Duration),
     PositionChanged(Duration),
     StateChanged(gstreamer::State),
+    StopRecording,
 }
 
 impl GProgram {
@@ -34,14 +35,22 @@ impl GProgram {
         let duration = (fullduration / 8.0) as u8;
         let pos = (current_pos / 8.0) as u8;
 
-        let btn: Element<GIcedMessage> =
-            match self.state {
-                PlayingState::Playing => button(text("[]"))
-                    .on_press(GIcedMessage::RequestStateChange(PlayingState::Paused)),
-                _ => button(text("|>"))
-                    .on_press(GIcedMessage::RequestStateChange(PlayingState::Playing)),
+        let btn: Element<GIcedMessage> = match self.state {
+            PlayingState::Playing => {
+                button(text("[]")).on_press(GIcedMessage::RequestStateChange(PlayingState::Paused))
             }
-            .into();
+            _ => button(text("|>")).on_press_maybe(match self.state {
+                PlayingState::Null => None,
+                _ => Some(GIcedMessage::RequestStateChange(PlayingState::Playing)),
+            }),
+        }
+        .into();
+
+        let btn_stop_record = button(text("x")).on_press_maybe(match self.state {
+            PlayingState::Null => None,
+            _ => Some(GIcedMessage::StopRecording),
+        });
+
         let video = VideoPlayer::new(&self.video)
             .on_position_changed(GIcedMessage::PositionChanged)
             .on_duration_changed(GIcedMessage::DurationChanged)
@@ -65,7 +74,9 @@ impl GProgram {
         container(column![
             video,
             duration_component,
-            container(btn).width(Length::Fill).center_x(Length::Fill)
+            container(row![btn, btn_stop_record])
+                .width(Length::Fill)
+                .center_x(Length::Fill)
         ])
         .width(Length::Fill)
         .height(Length::Fill)
@@ -105,6 +116,10 @@ impl GProgram {
             }
             GIcedMessage::StateChanged(state) => {
                 self.state = state;
+                iced::Task::none()
+            }
+            GIcedMessage::StopRecording => {
+                self.video.stop_recording();
                 iced::Task::none()
             }
         }

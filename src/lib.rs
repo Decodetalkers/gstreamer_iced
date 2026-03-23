@@ -80,6 +80,15 @@ impl GVideo {
     pub fn empty() -> Self {
         Self::None
     }
+
+    pub fn stop_recording(&self) {
+        match self {
+            Self::None => {}
+            Self::PipeWire(pw) => pw.stop_recording(),
+            Self::UrlPlayer(player) => player.stop_recording(),
+        }
+    }
+
     pub fn open_pipewire(&mut self, path: u32, fd: RawFd) -> Result<(), IcedGStreamerError> {
         *self = Self::new_pipewire(path, fd)?;
         Ok(())
@@ -301,9 +310,7 @@ impl From<u64> for Position {
 
 impl<const X: usize> Drop for GVideoInner<X> {
     fn drop(&mut self) {
-        self.source
-            .set_state(gst::State::Null)
-            .expect("failed to set state");
+        self.source.send_event(gst::event::Eos::new());
         self.alive.store(false, Ordering::SeqCst);
     }
 }
@@ -345,5 +352,8 @@ impl<const X: usize> GVideoInner<X> {
             }
             _ => {}
         }
+    }
+    pub fn stop_recording(&self) {
+        self.source.send_event(gst::event::Eos::new());
     }
 }
