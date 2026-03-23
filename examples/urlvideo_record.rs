@@ -119,7 +119,10 @@ impl GProgram {
             "http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4",
         )
         .unwrap();
-        let video = GVideo::new_url_and_record(&url, false, "video.mp4").unwrap();
+        let video = GVideo::new_url(url, false)
+            .save_file("video.mp4")
+            .build()
+            .unwrap();
 
         Self {
             state: video.play_state(),

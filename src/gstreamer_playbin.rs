@@ -124,12 +124,10 @@ impl GVideoUrl {
         let videoscale = gst::ElementFactory::make("videoscale").build()?;
         let videoconvert1 = gst::ElementFactory::make("videoconvert")
             .name("videoconvert1")
-            .build()
-            .unwrap();
+            .build()?;
         let videoconvert2 = gst::ElementFactory::make("videoconvert")
             .name("videoconvert2")
-            .build()
-            .unwrap();
+            .build()?;
         let x264enc = gst::ElementFactory::make("x264enc")
             .property_from_str("tune", "zerolatency")
             .build()?;

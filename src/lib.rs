@@ -11,6 +11,7 @@ use gstreamer as gst;
 use std::hash::Hash;
 use std::os::fd::RawFd;
 use std::path::Path;
+use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, RwLock};
@@ -75,61 +76,178 @@ impl Default for GVideo {
     }
 }
 
+mod seal {
+    use super::*;
+    #[derive(Debug)]
+    pub struct UrlBinBuilderRef<'a> {
+        video: &'a mut GVideo,
+        url: url::Url,
+        is_live: bool,
+        file: Option<PathBuf>,
+    }
+
+    impl<'a> UrlBinBuilderRef<'a> {
+        pub(crate) fn new(video: &'a mut GVideo, url: url::Url, is_live: bool) -> Self {
+            Self {
+                video,
+                url,
+                is_live,
+                file: None,
+            }
+        }
+        pub fn save_file<P: AsRef<Path>>(mut self, file: P) -> Self {
+            self.file = Some(file.as_ref().to_path_buf());
+            self
+        }
+        pub fn save_file_maybe<P: AsRef<Path>>(mut self, file: Option<P>) -> Self {
+            self.file = file.map(|f| f.as_ref().to_path_buf());
+            self
+        }
+        pub fn finish(self) -> Result<(), IcedGStreamerError> {
+            *self.video = match self.file {
+                Some(file) => GVideo::UrlPlayer(GVideoUrl::new_url_and_record(
+                    &self.url,
+                    self.is_live,
+                    file,
+                )?),
+                None => GVideo::UrlPlayer(GVideoUrl::new_url(&self.url, self.is_live)?),
+            };
+            Ok(())
+        }
+    }
+    #[derive(Debug)]
+    pub struct PipeWireBuilderRef<'a> {
+        video: &'a mut GVideo,
+        path: u32,
+        fd: RawFd,
+        file: Option<PathBuf>,
+    }
+
+    impl<'a> PipeWireBuilderRef<'a> {
+        pub(crate) fn new(video: &'a mut GVideo, path: u32, fd: RawFd) -> Self {
+            Self {
+                video,
+                path,
+                fd,
+                file: None,
+            }
+        }
+        pub fn save_file<P: AsRef<Path>>(mut self, file: P) -> Self {
+            self.file = Some(file.as_ref().to_path_buf());
+            self
+        }
+        pub fn save_file_maybe<P: AsRef<Path>>(mut self, file: Option<P>) -> Self {
+            self.file = file.map(|f| f.as_ref().to_path_buf());
+            self
+        }
+        pub fn finish(self) -> Result<(), IcedGStreamerError> {
+            *self.video = match self.file {
+                Some(file) => GVideo::PipeWire(GVideoPipewire::new_pipewire_and_record(
+                    self.path, self.fd, file,
+                )?),
+                None => GVideo::PipeWire(GVideoPipewire::new_pipewire(self.path, self.fd)?),
+            };
+            Ok(())
+        }
+    }
+
+    #[derive(Debug)]
+    pub struct PipeWireBuilder {
+        video: GVideo,
+        path: u32,
+        fd: RawFd,
+        file: Option<PathBuf>,
+    }
+
+    impl PipeWireBuilder {
+        pub(crate) fn new(path: u32, fd: RawFd) -> Self {
+            Self {
+                video: GVideo::None,
+                path,
+                fd,
+                file: None,
+            }
+        }
+        pub fn save_file<P: AsRef<Path>>(mut self, file: P) -> Self {
+            self.file = Some(file.as_ref().to_path_buf());
+            self
+        }
+        pub fn save_file_maybe<P: AsRef<Path>>(mut self, file: Option<P>) -> Self {
+            self.file = file.map(|f| f.as_ref().to_path_buf());
+            self
+        }
+        pub fn build(mut self) -> Result<GVideo, IcedGStreamerError> {
+            self.video = match self.file {
+                Some(file) => GVideo::PipeWire(GVideoPipewire::new_pipewire_and_record(
+                    self.path, self.fd, file,
+                )?),
+                None => GVideo::PipeWire(GVideoPipewire::new_pipewire(self.path, self.fd)?),
+            };
+            Ok(self.video)
+        }
+    }
+
+    #[derive(Debug)]
+    pub struct UrlBinBuilder {
+        video: GVideo,
+        url: url::Url,
+        is_live: bool,
+        file: Option<PathBuf>,
+    }
+
+    impl UrlBinBuilder {
+        pub(crate) fn new(url: url::Url, is_live: bool) -> Self {
+            Self {
+                video: GVideo::None,
+                url,
+                is_live,
+                file: None,
+            }
+        }
+        pub fn save_file<P: AsRef<Path>>(mut self, file: P) -> Self {
+            self.file = Some(file.as_ref().to_path_buf());
+            self
+        }
+        pub fn save_file_maybe<P: AsRef<Path>>(mut self, file: Option<P>) -> Self {
+            self.file = file.map(|f| f.as_ref().to_path_buf());
+            self
+        }
+        pub fn build(mut self) -> Result<GVideo, IcedGStreamerError> {
+            self.video = match self.file {
+                Some(file) => GVideo::UrlPlayer(GVideoUrl::new_url_and_record(
+                    &self.url,
+                    self.is_live,
+                    file,
+                )?),
+                None => GVideo::UrlPlayer(GVideoUrl::new_url(&self.url, self.is_live)?),
+            };
+            Ok(self.video)
+        }
+    }
+}
+use seal::*;
+
 impl GVideo {
     /// Open a empty video instance
     pub fn empty() -> Self {
         Self::None
     }
-    pub fn open_pipewire(&mut self, path: u32, fd: RawFd) -> Result<(), IcedGStreamerError> {
-        *self = Self::new_pipewire(path, fd)?;
-        Ok(())
+    pub fn open_pipewire<'a>(&'a mut self, path: u32, fd: RawFd) -> PipeWireBuilderRef<'a> {
+        PipeWireBuilderRef::new(self, path, fd)
     }
-    pub fn open_pipewire_and_record<P: AsRef<Path>>(
-        &mut self,
-        path: u32,
-        fd: RawFd,
-        file: P,
-    ) -> Result<(), IcedGStreamerError> {
-        *self = Self::new_pipewire_and_record(path, fd, file)?;
-        Ok(())
+
+    pub fn open_url<'a>(&'a mut self, url: url::Url, is_live: bool) -> UrlBinBuilderRef<'a> {
+        UrlBinBuilderRef::new(self, url, is_live)
     }
-    pub fn open_url(&mut self, url: &url::Url, is_live: bool) -> Result<(), IcedGStreamerError> {
-        *self = Self::new_url(url, is_live)?;
-        Ok(())
+
+    pub fn new_pipewire(path: u32, fd: RawFd) -> PipeWireBuilder {
+        PipeWireBuilder::new(path, fd)
     }
-    pub fn open_url_and_record<P: AsRef<Path>>(
-        &mut self,
-        url: &url::Url,
-        is_live: bool,
-        file: P,
-    ) -> Result<(), IcedGStreamerError> {
-        *self = Self::new_url_and_record(url, is_live, file)?;
-        Ok(())
+
+    pub fn new_url(url: url::Url, is_live: bool) -> UrlBinBuilder {
+        UrlBinBuilder::new(url, is_live)
     }
-    pub fn new_pipewire(path: u32, fd: RawFd) -> Result<Self, IcedGStreamerError> {
-        Ok(Self::PipeWire(GVideoPipewire::new_pipewire(path, fd)?))
-    }
-    pub fn new_pipewire_and_record<P: AsRef<Path>>(
-        path: u32,
-        fd: RawFd,
-        file: P,
-    ) -> Result<Self, IcedGStreamerError> {
-        Ok(Self::PipeWire(GVideoPipewire::new_pipewire_and_record(
-            path, fd, file,
-        )?))
-    }
-    pub fn new_url(url: &url::Url, is_live: bool) -> Result<Self, IcedGStreamerError> {
-        Ok(Self::UrlPlayer(GVideoUrl::new_url(url, is_live)?))
-    }
-    pub fn new_url_and_record<P: AsRef<Path>>(
-        url: &url::Url,
-        is_live: bool,
-        file: P,
-    ) -> Result<Self, IcedGStreamerError> {
-        Ok(Self::UrlPlayer(GVideoUrl::new_url_and_record(
-            url, is_live, file,
-        )?))
-    }
+
     pub fn as_url(&self) -> &GVideoUrl {
         let Self::UrlPlayer(url_player) = &self else {
             panic!("Not this type");

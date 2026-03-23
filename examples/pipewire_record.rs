@@ -98,7 +98,9 @@ impl GProgram {
             GIcedMessage::Ready((path, fd)) => {
                 self.fd = Some(fd.clone());
                 self.video
-                    .open_pipewire_and_record(path, fd.as_raw_fd(), "record.mp4")
+                    .open_pipewire(path, fd.as_raw_fd())
+                    .save_file("record.mp4")
+                    .finish()
                     .unwrap();
                 self.state = self.video.play_state();
                 Task::none()
@@ -118,10 +120,7 @@ impl GProgram {
                 state: video.play_state(),
                 video,
             },
-            iced::Task::perform(
-                async { get_path().await.unwrap() },
-                GIcedMessage::Ready,
-            ),
+            iced::Task::perform(async { get_path().await.unwrap() }, GIcedMessage::Ready),
         )
     }
 }
