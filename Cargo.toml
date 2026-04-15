@@ -27,7 +27,7 @@ iced_runtime = "0.14.0"
 log = "0.4.29"
 
 [dev-dependencies]
-tokio = { version = "1.50", features = ["full"] }
+tokio = { version = "1.51", features = ["full"] }
 iced = { version = "0.14", features = ["tokio", "debug"] }
 ashpd = { version = "0.13.8", default-features = false, features = [
   "tokio",
