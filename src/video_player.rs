@@ -8,7 +8,7 @@ use gst::State;
 use gstreamer as gst;
 use gstreamer::glib;
 use gstreamer::prelude::*;
-use iced_core::{layout, Widget};
+use iced_core::{layout, Element, Widget};
 use iced_wgpu::primitive::Renderer as PrimitiveRenderer;
 use std::time::Duration;
 
@@ -24,6 +24,7 @@ pub struct VideoPlayer<'a, Message, Theme = iced_core::Theme, Renderer = iced_re
     on_duration_changed: Option<Box<dyn Fn(Duration) -> Message + 'a>>,
     on_position_changed: Option<Box<dyn Fn(Duration) -> Message + 'a>>,
     on_state_changed: Option<Box<dyn Fn(State) -> Message + 'a>>,
+    status_bar: Option<Element<'a, Message, Theme, Renderer>>,
     _theme: PhantomData<Theme>,
     _message: PhantomData<Message>,
     _renderer: PhantomData<Renderer>,
@@ -45,6 +46,7 @@ where
             on_duration_changed: None,
             on_position_changed: None,
             on_state_changed: None,
+            status_bar: None,
             _theme: PhantomData,
             _message: PhantomData,
             _renderer: PhantomData,
@@ -118,6 +120,13 @@ where
             ..self
         }
     }
+
+    pub fn status_bar(self, status_bar: impl Into<Element<'a, Message, Theme, Renderer>>) -> Self {
+        VideoPlayer {
+            status_bar: Some(status_bar.into()),
+            ..self
+        }
+    }
 }
 impl<Message, Theme, Renderer> Widget<Message, Theme, Renderer>
     for VideoPlayer<'_, Message, Theme, Renderer>
@@ -160,15 +169,41 @@ where
 
         layout::Node::new(final_size)
     }
+
+    fn children(&self) -> Vec<iced_core::widget::Tree> {
+        match &self.status_bar {
+            Some(bar) => vec![iced_core::widget::Tree::new(bar)],
+            None => vec![],
+        }
+    }
+
+    fn diff(&self, tree: &mut iced_core::widget::Tree) {
+        if let Some(bar) = &self.status_bar {
+            tree.diff_children(&[bar]);
+        }
+    }
+
+    fn operate<'b>(
+        &'b mut self,
+        state: &'b mut iced_core::widget::Tree,
+        layout: iced_core::Layout<'_>,
+        renderer: &Renderer,
+        operation: &mut dyn iced_core::widget::Operation<()>,
+    ) {
+        if let Some(bar) = &mut self.status_bar {
+            bar.as_widget_mut()
+                .operate(&mut state.children[0], layout, renderer, operation);
+        }
+    }
     fn draw(
         &self,
-        _tree: &iced_core::widget::Tree,
+        tree: &iced_core::widget::Tree,
         renderer: &mut Renderer,
-        _theme: &Theme,
-        _style: &iced_core::renderer::Style,
+        theme: &Theme,
+        style: &iced_core::renderer::Style,
         layout: iced_core::Layout<'_>,
-        _cursor: iced_core::mouse::Cursor,
-        _viewport: &iced_core::Rectangle,
+        cursor: iced_core::mouse::Cursor,
+        viewport: &iced_core::Rectangle,
     ) {
         let Some(data) = self.video.frame_data() else {
             return;
@@ -219,17 +254,34 @@ where
         } else {
             render(renderer);
         }
+        const BAR_HEIGHT: f32 = 100.;
+        let mut status_bar_viewport = viewport.clone();
+
+        status_bar_viewport.y = status_bar_viewport.y + status_bar_viewport.height - BAR_HEIGHT;
+        status_bar_viewport.height = BAR_HEIGHT;
+
+        if let Some(status_bar) = &self.status_bar {
+            status_bar.as_widget().draw(
+                &tree.children[0],
+                renderer,
+                theme,
+                style,
+                layout,
+                cursor,
+                &status_bar_viewport,
+            );
+        }
     }
     fn update(
         &mut self,
-        _tree: &mut iced_core::widget::Tree,
+        tree: &mut iced_core::widget::Tree,
         event: &iced_core::Event,
-        _layout: iced_core::Layout<'_>,
-        _cursor: iced_core::mouse::Cursor,
-        _renderer: &Renderer,
-        _clipboard: &mut dyn iced_core::Clipboard,
+        layout: iced_core::Layout<'_>,
+        cursor: iced_core::mouse::Cursor,
+        renderer: &Renderer,
+        clipboard: &mut dyn iced_core::Clipboard,
         shell: &mut iced_core::Shell<'_, Message>,
-        _viewport: &iced_core::Rectangle,
+        viewport: &iced_core::Rectangle,
     ) {
         let iced_core::Event::Window(iced_core::window::Event::RedrawRequested(_instant)) = event
         else {
@@ -325,6 +377,18 @@ where
                 }
                 _ => {}
             }
+        }
+        if let Some(status_bar) = &mut self.status_bar {
+            status_bar.as_widget_mut().update(
+                &mut tree.children[0],
+                event,
+                layout,
+                cursor,
+                renderer,
+                clipboard,
+                shell,
+                viewport,
+            );
         }
     }
 }

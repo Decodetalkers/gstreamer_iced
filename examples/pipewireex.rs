@@ -73,6 +73,7 @@ impl GProgram {
 
         let video = VideoPlayer::new(&self.video)
             .on_state_changed(GIcedMessage::StateChanged)
+            .status_bar(container(button("hello")).center_x(Length::Fill))
             .width(Length::Fill);
 
         container(column![

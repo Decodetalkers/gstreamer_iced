@@ -46,6 +46,7 @@ impl GProgram {
             .on_position_changed(GIcedMessage::PositionChanged)
             .on_duration_changed(GIcedMessage::DurationChanged)
             .on_state_changed(GIcedMessage::StateChanged)
+            .status_bar(container(button("hello")).center_x(Length::Fill))
             .width(Length::Fill);
 
         let pos_status = text(format!("{:.1} s/{:.1} s", current_pos, fullduration));
