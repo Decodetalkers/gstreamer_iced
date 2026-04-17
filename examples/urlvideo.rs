@@ -46,7 +46,12 @@ impl GProgram {
             .on_position_changed(GIcedMessage::PositionChanged)
             .on_duration_changed(GIcedMessage::DurationChanged)
             .on_state_changed(GIcedMessage::StateChanged)
-            .status_bar(container(button("hello")).center_x(Length::Fill))
+            .status_bar(
+                container(button("hello").on_press(GIcedMessage::VolChange(0.1)))
+                    .height(Length::Fill)
+                    .center_x(Length::Fill)
+                    .center_y(Length::Fill),
+            )
             .width(Length::Fill);
 
         let pos_status = text(format!("{:.1} s/{:.1} s", current_pos, fullduration));
@@ -117,7 +122,7 @@ impl GProgram {
 
     fn new() -> Self {
         let url = url::Url::parse(
-            "http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4",
+            "https://gstreamer.freedesktop.org/data/media/sintel_cropped_multilingual.webm",
         )
         .unwrap();
         let video = GVideo::new_url(url, false).build().unwrap();

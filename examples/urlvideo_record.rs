@@ -116,7 +116,7 @@ impl GProgram {
 
     fn new() -> Self {
         let url = url::Url::parse(
-            "http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4",
+            "https://gstreamer.freedesktop.org/data/media/sintel_cropped_multilingual.webm",
         )
         .unwrap();
         let video = GVideo::new_url(url, false)

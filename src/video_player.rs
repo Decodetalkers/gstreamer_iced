@@ -128,6 +128,7 @@ where
         }
     }
 }
+
 impl<Message, Theme, Renderer> Widget<Message, Theme, Renderer>
     for VideoPlayer<'_, Message, Theme, Renderer>
 where
@@ -140,6 +141,7 @@ where
             height: self.height,
         }
     }
+
     fn layout(
         &mut self,
         tree: &mut iced_core::widget::Tree,
@@ -170,7 +172,10 @@ where
         match &mut self.status_bar {
             Some(bar) => layout::Node::with_children(
                 final_size,
-                vec![bar.as_widget_mut().layout(tree, renderer, limits)],
+                vec![bar
+                    .as_widget_mut()
+                    .layout(&mut tree.children[0], renderer, limits)
+                    .move_to((0., 300.))],
             ),
             None => layout::Node::new(final_size),
         }
@@ -197,8 +202,12 @@ where
         operation: &mut dyn iced_core::widget::Operation<()>,
     ) {
         if let Some(bar) = &mut self.status_bar {
-            bar.as_widget_mut()
-                .operate(&mut state.children[0], layout, renderer, operation);
+            bar.as_widget_mut().operate(
+                &mut state.children[0],
+                layout.children().next().unwrap(),
+                renderer,
+                operation,
+            );
         }
     }
     fn draw(
@@ -260,22 +269,19 @@ where
         } else {
             render(renderer);
         }
-        const BAR_HEIGHT: f32 = 100.;
-        let mut status_bar_viewport = viewport.clone();
+        if let Some(viewport) = layout.bounds().intersection(viewport) {
 
-        status_bar_viewport.y = status_bar_viewport.y + status_bar_viewport.height - BAR_HEIGHT;
-        status_bar_viewport.height = BAR_HEIGHT;
-
-        if let Some(status_bar) = &self.status_bar {
-            status_bar.as_widget().draw(
-                &tree.children[0],
-                renderer,
-                theme,
-                style,
-                layout,
-                cursor,
-                &status_bar_viewport,
-            );
+            if let Some(status_bar) = &self.status_bar {
+                status_bar.as_widget().draw(
+                    &tree.children[0],
+                    renderer,
+                    theme,
+                    style,
+                    layout.children().next().unwrap(),
+                    cursor,
+                    &viewport,
+                );
+            }
         }
     }
     fn update(
@@ -388,7 +394,7 @@ where
             status_bar.as_widget_mut().update(
                 &mut tree.children[0],
                 event,
-                layout,
+                layout.children().next().unwrap(),
                 cursor,
                 renderer,
                 clipboard,
