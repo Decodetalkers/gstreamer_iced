@@ -270,7 +270,6 @@ where
             render(renderer);
         }
         if let Some(viewport) = layout.bounds().intersection(viewport) {
-
             if let Some(status_bar) = &self.status_bar {
                 status_bar.as_widget().draw(
                     &tree.children[0],
