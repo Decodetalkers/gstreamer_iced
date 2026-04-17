@@ -142,8 +142,8 @@ where
     }
     fn layout(
         &mut self,
-        _tree: &mut iced_core::widget::Tree,
-        _renderer: &Renderer,
+        tree: &mut iced_core::widget::Tree,
+        renderer: &Renderer,
         limits: &iced_core::layout::Limits,
     ) -> iced_core::layout::Node {
         let image_size = self
@@ -167,7 +167,13 @@ where
             },
         };
 
-        layout::Node::new(final_size)
+        match &mut self.status_bar {
+            Some(bar) => layout::Node::with_children(
+                final_size,
+                vec![bar.as_widget_mut().layout(tree, renderer, limits)],
+            ),
+            None => layout::Node::new(final_size),
+        }
     }
 
     fn children(&self) -> Vec<iced_core::widget::Tree> {
