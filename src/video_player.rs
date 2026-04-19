@@ -1,16 +1,16 @@
 use std::marker::PhantomData;
 use std::sync::atomic::Ordering;
 
-use crate::pipeline::VideoPrimitive;
 use crate::GVideo;
 use crate::StreamType;
+use crate::pipeline::VideoPrimitive;
 use gst::State;
 use gstreamer as gst;
 use gstreamer::glib;
 use gstreamer::prelude::*;
-use iced_core::{layout, Element, Widget};
+use iced_core::{Element, Widget, layout};
 use iced_wgpu::primitive::Renderer as PrimitiveRenderer;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// VideoPlayer, whose backend is gstreamer
 pub struct VideoPlayer<'a, Message, Theme = iced_core::Theme, Renderer = iced_renderer::Renderer> {
@@ -133,6 +133,8 @@ const HEIGHT: f32 = 40.;
 
 struct VideoState {
     size: Option<iced_core::Size>,
+    instant: Instant,
+    show: bool,
 }
 
 impl<Message, Theme, Renderer> Widget<Message, Theme, Renderer>
@@ -153,7 +155,11 @@ where
     }
 
     fn state(&self) -> iced_core::widget::tree::State {
-        iced_core::widget::tree::State::new(VideoState { size: None })
+        iced_core::widget::tree::State::new(VideoState {
+            size: None,
+            instant: Instant::now().checked_add(Duration::from_secs(2)).unwrap(),
+            show: false,
+        })
     }
 
     fn layout(
@@ -190,10 +196,11 @@ where
         match &mut self.status_bar {
             Some(bar) => layout::Node::with_children(
                 final_size,
-                vec![bar
-                    .as_widget_mut()
-                    .layout(&mut tree.children[0], renderer, &limits)
-                    .move_to((x, y))],
+                vec![
+                    bar.as_widget_mut()
+                        .layout(&mut tree.children[0], renderer, &limits)
+                        .move_to((x, y)),
+                ],
             ),
             None => layout::Node::new(final_size),
         }
@@ -238,10 +245,15 @@ where
         cursor: iced_core::mouse::Cursor,
         viewport: &iced_core::Rectangle,
     ) {
-        let video_size: &VideoState = tree.state.downcast_ref();
-        let Some(image_size) = video_size.size else {
+        let alive = self.video.alive().unwrap().load(Ordering::Relaxed);
+        if !alive {
+            return;
+        }
+        let video_state: &VideoState = tree.state.downcast_ref();
+        let Some(image_size) = video_state.size else {
             return;
         };
+
         let bounds = layout.bounds();
         let adjusted_fit = self.content_fit.fit(image_size, bounds.size());
         let scale = iced_core::Vector::new(
@@ -287,20 +299,22 @@ where
             render(renderer);
         }
 
-        if let Some(viewport) = drawing_bounds.intersection(viewport) {
-            if let Some(status_bar) = &self.status_bar {
-                renderer.with_layer(viewport, |renderer| {
-                    status_bar.as_widget().draw(
-                        &tree.children[0],
-                        renderer,
-                        theme,
-                        style,
-                        layout.child(0),
-                        cursor,
-                        &viewport,
-                    )
-                });
-            }
+        if let Some(viewport) = drawing_bounds.intersection(viewport)
+            && video_state.show
+            && let Some(status_bar) = &self.status_bar
+            && cursor.is_over(viewport)
+        {
+            renderer.with_layer(viewport, |renderer| {
+                status_bar.as_widget().draw(
+                    &tree.children[0],
+                    renderer,
+                    theme,
+                    style,
+                    layout.child(0),
+                    cursor,
+                    &viewport,
+                )
+            });
         }
     }
     fn update(
@@ -314,6 +328,7 @@ where
         shell: &mut iced_core::Shell<'_, Message>,
         viewport: &iced_core::Rectangle,
     ) {
+        let state: &mut VideoState = tree.state.downcast_mut();
         if let Some(status_bar) = &mut self.status_bar {
             status_bar.as_widget_mut().update(
                 &mut tree.children[0],
@@ -326,22 +341,34 @@ where
                 viewport,
             );
         }
-        let iced_core::Event::Window(iced_core::window::Event::RedrawRequested(_instant)) = event
-        else {
-            return;
+
+        let _instant = match event {
+            iced_core::Event::Window(iced_core::window::Event::RedrawRequested(instant)) => instant,
+            iced_core::Event::Mouse(_) => {
+                state.instant = Instant::now().checked_add(Duration::from_secs(2)).unwrap();
+                state.show = true;
+                return;
+            }
+            _ => {
+                return;
+            }
         };
+        if state.instant < Instant::now() && state.show {
+            state.show = false;
+        }
         if self.video.is_none() {
             return;
         }
         if let Some(data) = self.video.frame_data() {
             let (width, height) = data.size();
             let image_size = iced_core::Size::new(width as f32, height as f32);
-            let state: &mut VideoState = tree.state.downcast_mut();
+
             state.size = Some(image_size);
         }
         let state_o = self.video.state().unwrap();
         let mut state = state_o.write().unwrap();
-        if self.video.stream_type() == StreamType::UrlPlayer {
+        let alive = self.video.alive().unwrap().load(Ordering::Relaxed);
+        if self.video.stream_type() == StreamType::UrlPlayer && alive {
             if state.get_duration_attempt && self.video.play_state() == gst::State::Playing {
                 loop {
                     self.video
@@ -393,6 +420,7 @@ where
         if self.video.play_state() == gst::State::Playing {
             shell.request_redraw();
         }
+
         while let Some(msg) = self.video.bus().unwrap().pop_filtered(&[
             gst::MessageType::Error,
             gst::MessageType::Eos,
@@ -416,10 +444,13 @@ where
                     }
                     if let Some(on_end_of_stream) = self.on_end_of_stream.clone() {
                         shell.publish(on_end_of_stream);
-                        self.video.alive().unwrap().swap(false, Ordering::SeqCst);
                     }
+                    self.video.alive().unwrap().swap(false, Ordering::SeqCst);
                 }
                 gstreamer::MessageView::StateChanged(change) => {
+                    if change.current() == gst::State::Playing {
+                        self.video.alive().unwrap().swap(true, Ordering::SeqCst);
+                    }
                     if let Some(on_state_changed) = &self.on_state_changed {
                         shell.publish(on_state_changed(change.current()));
                     }

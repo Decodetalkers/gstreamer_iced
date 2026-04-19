@@ -1,5 +1,5 @@
-use gst::prelude::*;
 use gst::GenericFormattedValue;
+use gst::prelude::*;
 use gstreamer as gst;
 use gstreamer_app as gst_app;
 use std::path::Path;
