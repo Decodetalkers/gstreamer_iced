@@ -1,12 +1,11 @@
 use gst::prelude::*;
-use gst::GenericFormattedValue;
 use gstreamer as gst;
 use gstreamer_app as gst_app;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, RwLock};
 
-use super::{FrameData, GVideoInner, IcedGStreamerError, Position};
+use super::{FrameData, GVideoInner, GsEvent, IcedGStreamerError, Position};
 
 /// The main container for a gstreamer task
 /// For playbin url
@@ -14,15 +13,16 @@ pub type GVideoUrl = GVideoInner<0>;
 
 impl GVideoUrl {
     /// Seak to a position
-    pub fn seek<T>(&self, position: T) -> Result<(), IcedGStreamerError>
+    pub fn seek<T>(&self, position: T)
     where
         T: Into<Position>,
     {
         let pos: Position = position.into();
-        let position: GenericFormattedValue = pos.into();
-        self.source.seek_simple(gst::SeekFlags::FLUSH, position)?;
-
-        Ok(())
+        if self.play_state() == gst::State::Null {
+            self.set_state(gst::State::Playing);
+        }
+        let mut pending_events = self.pending_events.write().unwrap();
+        pending_events.push(GsEvent::Jump(pos));
     }
 
     /// accept url like from local or from http
@@ -101,6 +101,7 @@ impl GVideoUrl {
             frame,
             alive: Arc::new(AtomicBool::new(true)),
             id: crate::id::Id::unique(),
+            pending_events: RwLock::new(vec![]),
         })
     }
     pub(crate) fn new_url_and_record<P: AsRef<Path>>(
@@ -229,6 +230,7 @@ impl GVideoUrl {
             frame,
             alive: Arc::new(AtomicBool::new(true)),
             id: crate::id::Id::unique(),
+            pending_events: RwLock::new(vec![]),
         })
     }
 

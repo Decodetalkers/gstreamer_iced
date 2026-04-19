@@ -5,7 +5,7 @@ use gstreamer_app as gst_app;
 use std::{
     os::fd::RawFd,
     path::Path,
-    sync::{atomic::AtomicBool, Arc, Mutex, RwLock},
+    sync::{Arc, Mutex, RwLock, atomic::AtomicBool},
 };
 
 /// The main container for a gstreamer task
@@ -85,6 +85,7 @@ impl GVideoPipewire {
             frame,
             alive: Arc::new(AtomicBool::new(true)),
             id: crate::id::Id::unique(),
+            pending_events: RwLock::new(vec![]),
         })
     }
 
@@ -206,6 +207,7 @@ impl GVideoPipewire {
             frame,
             alive: Arc::new(AtomicBool::new(true)),
             id: crate::id::Id::unique(),
+            pending_events: RwLock::new(vec![]),
         })
     }
 }

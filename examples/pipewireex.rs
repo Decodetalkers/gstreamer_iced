@@ -1,11 +1,11 @@
 use ashpd::desktop::{
-    screencast::{CursorMode, Screencast, SelectSourcesOptions, SourceType},
     PersistMode,
+    screencast::{CursorMode, Screencast, SelectSourcesOptions, SourceType},
 };
-use iced::widget::container;
-use iced::widget::{button, column, text};
 use iced::Length;
 use iced::Task;
+use iced::widget::container;
+use iced::widget::{button, column, text};
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::sync::Arc;
 
@@ -73,6 +73,7 @@ impl GProgram {
 
         let video = VideoPlayer::new(&self.video)
             .on_state_changed(GIcedMessage::StateChanged)
+            .status_bar(container(button("hello")).center_x(Length::Fill))
             .width(Length::Fill);
 
         container(column![

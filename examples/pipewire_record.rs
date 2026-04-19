@@ -1,11 +1,11 @@
 use ashpd::desktop::{
-    screencast::{CursorMode, Screencast, SelectSourcesOptions, SourceType},
     PersistMode,
+    screencast::{CursorMode, Screencast, SelectSourcesOptions, SourceType},
 };
-use iced::widget::container;
-use iced::widget::{button, column, text};
 use iced::Length;
 use iced::Task;
+use iced::widget::container;
+use iced::widget::{button, column, text};
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::sync::Arc;
 

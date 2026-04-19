@@ -79,8 +79,7 @@ impl GProgram {
             GIcedMessage::Jump(step) => {
                 self.video
                     .as_url()
-                    .seek(std::time::Duration::from_secs(step as u64 * 8))
-                    .unwrap();
+                    .seek(std::time::Duration::from_secs(step as u64 * 8));
                 iced::Task::none()
             }
             GIcedMessage::DurationChanged(duration) => {
@@ -116,7 +115,7 @@ impl GProgram {
 
     fn new() -> Self {
         let url = url::Url::parse(
-            "http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4",
+            "https://gstreamer.freedesktop.org/data/media/sintel_cropped_multilingual.webm",
         )
         .unwrap();
         let video = GVideo::new_url(url, false)

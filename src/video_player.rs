@@ -1,19 +1,120 @@
 use std::marker::PhantomData;
 use std::sync::atomic::Ordering;
 
-use crate::pipeline::VideoPrimitive;
 use crate::GVideo;
 use crate::StreamType;
+use crate::pipeline::VideoPrimitive;
 use gst::State;
 use gstreamer as gst;
+use gstreamer::GenericFormattedValue;
 use gstreamer::glib;
 use gstreamer::prelude::*;
-use iced_core::{layout, Widget};
+use iced_core::{Background, Border, Color, Element, Shadow, Theme, Widget, border, layout};
 use iced_wgpu::primitive::Renderer as PrimitiveRenderer;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+/// The style of a button.
+///
+/// If not specified with [`Button::style`]
+/// the theme will provide the style.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Style {
+    /// The [`Background`] of the video
+    pub background: Option<Background>,
+    /// The text [`Color`] of the button.
+    pub text_color: Color,
+    /// The [`Border`] of the button.
+    pub border: Border,
+    /// The [`Shadow`] of the button.
+    pub shadow: Shadow,
+    /// Whether the button should be snapped to the pixel grid.
+    pub snap: bool,
+
+    pub video_background: Color,
+}
+
+impl Style {
+    /// Updates the [`Style`] with the given [`Background`].
+    pub fn with_background(self, background: impl Into<Background>) -> Self {
+        Self {
+            background: Some(background.into()),
+            ..self
+        }
+    }
+    /// Updates the [`Style`] with the given [`Background`].
+    pub fn with_video_background(self, video_background: Color) -> Self {
+        Self {
+            video_background,
+            ..self
+        }
+    }
+}
+
+impl Default for Style {
+    fn default() -> Self {
+        Self {
+            background: None,
+            text_color: Color::BLACK,
+            video_background: Color::BLACK,
+            border: Border::default(),
+            shadow: Shadow::default(),
+            snap: false,
+        }
+    }
+}
+
+pub type StyleFn<'a, Theme> = Box<dyn Fn(&Theme) -> Style + 'a>;
+
+pub trait Catalog {
+    /// The item class of the [`Catalog`].
+    type Class<'a>;
+
+    /// The default class produced by the [`Catalog`].
+    fn default<'a>() -> Self::Class<'a>;
+
+    /// The [`Style`] of a class with the given status.
+    fn style(&self, class: &Self::Class<'_>) -> Style;
+}
+
+impl Catalog for Theme {
+    type Class<'a> = StyleFn<'a, Self>;
+
+    fn default<'a>() -> Self::Class<'a> {
+        Box::new(primary)
+    }
+
+    fn style(&self, class: &Self::Class<'_>) -> Style {
+        class(self)
+    }
+}
+
+fn styled(color: Color) -> Style {
+    Style {
+        background: Some(Background::Color(color)),
+        border: border::rounded(2),
+        ..Style::default()
+    }
+}
+
+/// A primary button; denoting a main action.
+pub fn primary(theme: &Theme) -> Style {
+    let palette = theme.palette();
+    styled(palette.primary)
+}
+
+/// A way to set the background color for video
+pub fn video_background_primary<'a>(video_background: Color) -> impl Fn(&Theme) -> Style + 'a {
+    move |theme| Style {
+        video_background,
+        ..primary(theme)
+    }
+}
 
 /// VideoPlayer, whose backend is gstreamer
-pub struct VideoPlayer<'a, Message, Theme = iced_core::Theme, Renderer = iced_renderer::Renderer> {
+pub struct VideoPlayer<'a, Message, Theme, Renderer = iced_renderer::Renderer>
+where
+    Theme: Catalog,
+{
     video: &'a GVideo,
     content_fit: iced_core::ContentFit,
     width: iced_core::Length,
@@ -24,6 +125,10 @@ pub struct VideoPlayer<'a, Message, Theme = iced_core::Theme, Renderer = iced_re
     on_duration_changed: Option<Box<dyn Fn(Duration) -> Message + 'a>>,
     on_position_changed: Option<Box<dyn Fn(Duration) -> Message + 'a>>,
     on_state_changed: Option<Box<dyn Fn(State) -> Message + 'a>>,
+    status_bar: Option<Element<'a, Message, Theme, Renderer>>,
+    status_bar_delay: u64,
+    status_bar_height: f32,
+    class: Theme::Class<'a>,
     _theme: PhantomData<Theme>,
     _message: PhantomData<Message>,
     _renderer: PhantomData<Renderer>,
@@ -32,6 +137,7 @@ pub struct VideoPlayer<'a, Message, Theme = iced_core::Theme, Renderer = iced_re
 impl<'a, Message, Theme, Renderer> VideoPlayer<'a, Message, Theme, Renderer>
 where
     Renderer: PrimitiveRenderer,
+    Theme: Catalog,
 {
     /// create a new video player
     pub fn new(video: &'a GVideo) -> Self {
@@ -45,6 +151,10 @@ where
             on_duration_changed: None,
             on_position_changed: None,
             on_state_changed: None,
+            status_bar: None,
+            status_bar_delay: 2,
+            status_bar_height: 70.,
+            class: Theme::default(),
             _theme: PhantomData,
             _message: PhantomData,
             _renderer: PhantomData,
@@ -118,12 +228,48 @@ where
             ..self
         }
     }
+
+    pub fn status_bar(self, status_bar: impl Into<Element<'a, Message, Theme, Renderer>>) -> Self {
+        VideoPlayer {
+            status_bar: Some(status_bar.into()),
+            ..self
+        }
+    }
+    pub fn status_bar_height(self, status_bar_height: f32) -> Self {
+        VideoPlayer {
+            status_bar_height,
+            ..self
+        }
+    }
+    pub fn status_bar_delay(self, status_bar_delay: u64) -> Self {
+        VideoPlayer {
+            status_bar_delay,
+            ..self
+        }
+    }
+
+    #[must_use]
+    pub fn style(mut self, style: impl Fn(&Theme) -> Style + 'a) -> Self
+    where
+        Theme::Class<'a>: From<StyleFn<'a, Theme>>,
+    {
+        self.class = (Box::new(style) as StyleFn<'a, Theme>).into();
+        self
+    }
 }
+
+struct VideoState {
+    size: Option<iced_core::Size>,
+    instant: Instant,
+    status_bar_shown: bool,
+}
+
 impl<Message, Theme, Renderer> Widget<Message, Theme, Renderer>
     for VideoPlayer<'_, Message, Theme, Renderer>
 where
     Message: Clone,
     Renderer: PrimitiveRenderer,
+    Theme: Catalog,
 {
     fn size(&self) -> iced_core::Size<iced_core::Length> {
         iced_core::Size {
@@ -131,20 +277,32 @@ where
             height: self.height,
         }
     }
+
+    fn tag(&self) -> iced_core::widget::tree::Tag {
+        iced_core::widget::tree::Tag::of::<VideoState>()
+    }
+
+    fn state(&self) -> iced_core::widget::tree::State {
+        iced_core::widget::tree::State::new(VideoState {
+            size: None,
+            instant: Instant::now()
+                .checked_add(Duration::from_secs(self.status_bar_delay))
+                .unwrap(),
+            status_bar_shown: false,
+        })
+    }
+
     fn layout(
         &mut self,
-        _tree: &mut iced_core::widget::Tree,
-        _renderer: &Renderer,
+        tree: &mut iced_core::widget::Tree,
+        renderer: &Renderer,
         limits: &iced_core::layout::Limits,
     ) -> iced_core::layout::Node {
-        let image_size = self
-            .video
-            .frame_data()
-            .map(|data| iced_core::Size {
-                width: data.width as f32,
-                height: data.height as f32,
-            })
-            .unwrap_or(limits.min());
+        let video_state: &mut VideoState = tree.state.downcast_mut();
+        let image_size = video_state.size.unwrap_or(limits.max());
+        if video_state.size.is_none() {
+            video_state.size = Some(image_size);
+        }
         let raw_size = limits.resolve(self.width, self.height, image_size);
         let full_size = self.content_fit.fit(image_size, raw_size);
         let final_size = iced_core::Size {
@@ -158,24 +316,109 @@ where
             },
         };
 
-        layout::Node::new(final_size)
+        let limits = iced_core::layout::Limits::new(
+            iced_core::Size {
+                width: limits.min().width,
+                height: self.status_bar_height,
+            },
+            iced_core::Size {
+                width: raw_size.width,
+                height: self.status_bar_height,
+            },
+        );
+
+        let y = final_size.height - self.status_bar_height;
+
+        match &mut self.status_bar {
+            Some(bar) => layout::Node::with_children(
+                final_size,
+                vec![
+                    bar.as_widget_mut()
+                        .layout(&mut tree.children[0], renderer, &limits)
+                        .move_to((0., y)),
+                ],
+            ),
+            None => layout::Node::new(final_size),
+        }
+    }
+
+    fn children(&self) -> Vec<iced_core::widget::Tree> {
+        match &self.status_bar {
+            Some(bar) => vec![iced_core::widget::Tree::new(bar)],
+            None => vec![],
+        }
+    }
+
+    fn diff(&self, tree: &mut iced_core::widget::Tree) {
+        if let Some(bar) = &self.status_bar {
+            tree.diff_children(&[bar]);
+        }
+    }
+
+    fn operate<'b>(
+        &'b mut self,
+        state: &'b mut iced_core::widget::Tree,
+        layout: iced_core::Layout<'_>,
+        renderer: &Renderer,
+        operation: &mut dyn iced_core::widget::Operation<()>,
+    ) {
+        if let Some(bar) = &mut self.status_bar {
+            bar.as_widget_mut().operate(
+                &mut state.children[0],
+                layout.child(0),
+                renderer,
+                operation,
+            );
+        }
     }
     fn draw(
         &self,
-        _tree: &iced_core::widget::Tree,
+        tree: &iced_core::widget::Tree,
         renderer: &mut Renderer,
-        _theme: &Theme,
-        _style: &iced_core::renderer::Style,
+        theme: &Theme,
+        style: &iced_core::renderer::Style,
         layout: iced_core::Layout<'_>,
-        _cursor: iced_core::mouse::Cursor,
-        _viewport: &iced_core::Rectangle,
+        cursor: iced_core::mouse::Cursor,
+        viewport: &iced_core::Rectangle,
     ) {
-        let Some(data) = self.video.frame_data() else {
+        let bounds = layout.bounds();
+        let vstyle = theme.style(&self.class);
+
+        renderer.fill_quad(
+            iced_core::renderer::Quad {
+                bounds,
+                border: vstyle.border,
+                shadow: vstyle.shadow,
+                snap: vstyle.snap,
+            },
+            vstyle.video_background,
+        );
+        let video_state: &VideoState = tree.state.downcast_ref();
+        if video_state.status_bar_shown
+            && let Some(status_bar) = &self.status_bar
+            && cursor.is_over(*viewport)
+        {
+            renderer.with_layer(*viewport, |renderer| {
+                status_bar.as_widget().draw(
+                    &tree.children[0],
+                    renderer,
+                    theme,
+                    style,
+                    layout.child(0),
+                    cursor,
+                    viewport,
+                )
+            });
+        }
+        let alive = self.video.alive().unwrap().load(Ordering::Relaxed);
+        if !alive {
+            return;
+        }
+
+        let Some(image_size) = video_state.size else {
             return;
         };
-        let (width, height) = data.size();
-        let image_size = iced_core::Size::new(width as f32, height as f32);
-        let bounds = layout.bounds();
+
         let adjusted_fit = self.content_fit.fit(image_size, bounds.size());
         let scale = iced_core::Vector::new(
             adjusted_fit.width / image_size.width,
@@ -222,25 +465,75 @@ where
     }
     fn update(
         &mut self,
-        _tree: &mut iced_core::widget::Tree,
+        tree: &mut iced_core::widget::Tree,
         event: &iced_core::Event,
-        _layout: iced_core::Layout<'_>,
-        _cursor: iced_core::mouse::Cursor,
-        _renderer: &Renderer,
-        _clipboard: &mut dyn iced_core::Clipboard,
+        layout: iced_core::Layout<'_>,
+        cursor: iced_core::mouse::Cursor,
+        renderer: &Renderer,
+        clipboard: &mut dyn iced_core::Clipboard,
         shell: &mut iced_core::Shell<'_, Message>,
-        _viewport: &iced_core::Rectangle,
+        viewport: &iced_core::Rectangle,
     ) {
-        let iced_core::Event::Window(iced_core::window::Event::RedrawRequested(_instant)) = event
-        else {
-            return;
+        let state: &mut VideoState = tree.state.downcast_mut();
+        if let Some(status_bar) = &mut self.status_bar
+            && state.status_bar_shown
+        {
+            status_bar.as_widget_mut().update(
+                &mut tree.children[0],
+                event,
+                layout.child(0),
+                cursor,
+                renderer,
+                clipboard,
+                shell,
+                viewport,
+            );
+        }
+
+        let _instant = match event {
+            iced_core::Event::Window(iced_core::window::Event::RedrawRequested(instant)) => instant,
+            iced_core::Event::Mouse(_) => {
+                state.instant = Instant::now()
+                    .checked_add(Duration::from_secs(self.status_bar_delay))
+                    .unwrap();
+                state.status_bar_shown = true;
+                return;
+            }
+            _ => {
+                return;
+            }
         };
+        if state.instant < Instant::now() && state.status_bar_shown {
+            state.status_bar_shown = false;
+        }
         if self.video.is_none() {
             return;
         }
+        if let Some(data) = self.video.frame_data() {
+            let (width, height) = data.size();
+            let image_size = iced_core::Size::new(width as f32, height as f32);
+
+            state.size = Some(image_size);
+        }
+
+        let alive = self.video.alive().unwrap().load(Ordering::Relaxed);
+
         let state_o = self.video.state().unwrap();
         let mut state = state_o.write().unwrap();
-        if self.video.stream_type() == StreamType::UrlPlayer {
+
+        if self.video.stream_type() == StreamType::UrlPlayer && alive {
+            for event in self.video.pending_events() {
+                match event {
+                    crate::GsEvent::Jump(position) => {
+                        let position: GenericFormattedValue = position.into();
+                        let _ = self
+                            .video
+                            .source()
+                            .unwrap()
+                            .seek_simple(gst::SeekFlags::FLUSH, position);
+                    }
+                }
+            }
             if state.get_duration_attempt && self.video.play_state() == gst::State::Playing {
                 loop {
                     self.video
@@ -289,9 +582,13 @@ where
             }
             state.volume = self.video.source().unwrap().property("volume");
         }
-        if self.video.play_state() == gst::State::Playing {
+        if matches!(
+            self.video.play_state(),
+            gst::State::Playing | gst::State::Ready
+        ) {
             shell.request_redraw();
         }
+
         while let Some(msg) = self.video.bus().unwrap().pop_filtered(&[
             gst::MessageType::Error,
             gst::MessageType::Eos,
@@ -315,10 +612,13 @@ where
                     }
                     if let Some(on_end_of_stream) = self.on_end_of_stream.clone() {
                         shell.publish(on_end_of_stream);
-                        self.video.alive().unwrap().swap(false, Ordering::SeqCst);
                     }
+                    self.video.alive().unwrap().swap(false, Ordering::SeqCst);
                 }
                 gstreamer::MessageView::StateChanged(change) => {
+                    if change.current() == gst::State::Playing {
+                        self.video.alive().unwrap().swap(true, Ordering::SeqCst);
+                    }
                     if let Some(on_state_changed) = &self.on_state_changed {
                         shell.publish(on_state_changed(change.current()));
                     }
@@ -326,6 +626,30 @@ where
                 _ => {}
             }
         }
+    }
+
+    fn mouse_interaction(
+        &self,
+        tree: &iced_core::widget::Tree,
+        layout: layout::Layout<'_>,
+        cursor: iced_core::mouse::Cursor,
+        viewport: &iced_core::Rectangle,
+        renderer: &Renderer,
+    ) -> iced_core::mouse::Interaction {
+        let video_state: &VideoState = tree.state.downcast_ref();
+        if !video_state.status_bar_shown {
+            return iced_core::mouse::Interaction::Hidden;
+        }
+        if let Some(status_bar) = &self.status_bar {
+            return status_bar.as_widget().mouse_interaction(
+                &tree.children[0],
+                layout.child(0),
+                cursor,
+                viewport,
+                renderer,
+            );
+        }
+        iced_core::mouse::Interaction::default()
     }
 }
 
@@ -335,6 +659,7 @@ where
     Message: 'a + Clone,
     Theme: 'a,
     Renderer: 'a + PrimitiveRenderer,
+    Theme: Catalog,
 {
     fn from(video_player: VideoPlayer<'a, Message, Theme, Renderer>) -> Self {
         Self::new(video_player)
