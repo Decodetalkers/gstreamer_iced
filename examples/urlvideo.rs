@@ -47,10 +47,15 @@ impl GProgram {
             .on_duration_changed(GIcedMessage::DurationChanged)
             .on_state_changed(GIcedMessage::StateChanged)
             .status_bar(
-                container(button("hello").on_press(GIcedMessage::VolChange(0.1)))
-                    .height(Length::Fill)
-                    .center_x(Length::Fill)
-                    .center_y(Length::Fill),
+                container(
+                    button(text("hello").width(Length::Fill).center())
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                        .on_press(GIcedMessage::VolChange(0.1)),
+                )
+                .height(Length::Fill)
+                .center_x(Length::Fill)
+                .center_y(Length::Fill),
             )
             .width(Length::Fill);
 

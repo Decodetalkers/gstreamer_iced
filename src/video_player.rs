@@ -129,6 +129,12 @@ where
     }
 }
 
+const HEIGHT: f32 = 40.;
+
+struct VideoState {
+    size: Option<iced_core::Size>,
+}
+
 impl<Message, Theme, Renderer> Widget<Message, Theme, Renderer>
     for VideoPlayer<'_, Message, Theme, Renderer>
 where
@@ -142,20 +148,22 @@ where
         }
     }
 
+    fn tag(&self) -> iced_core::widget::tree::Tag {
+        iced_core::widget::tree::Tag::of::<VideoState>()
+    }
+
+    fn state(&self) -> iced_core::widget::tree::State {
+        iced_core::widget::tree::State::new(VideoState { size: None })
+    }
+
     fn layout(
         &mut self,
         tree: &mut iced_core::widget::Tree,
         renderer: &Renderer,
         limits: &iced_core::layout::Limits,
     ) -> iced_core::layout::Node {
-        let image_size = self
-            .video
-            .frame_data()
-            .map(|data| iced_core::Size {
-                width: data.width as f32,
-                height: data.height as f32,
-            })
-            .unwrap_or(limits.min());
+        let video_size: &VideoState = tree.state.downcast_ref();
+        let image_size = video_size.size.unwrap_or(limits.min());
         let raw_size = limits.resolve(self.width, self.height, image_size);
         let full_size = self.content_fit.fit(image_size, raw_size);
         let final_size = iced_core::Size {
@@ -169,13 +177,23 @@ where
             },
         };
 
+        let limits = iced_core::layout::Limits::new(
+            limits.min(),
+            iced_core::Size {
+                width: full_size.width,
+                height: HEIGHT,
+            },
+        );
+        let y = final_size.height - HEIGHT;
+        let x = (full_size.width - raw_size.width).abs() / 2.;
+
         match &mut self.status_bar {
             Some(bar) => layout::Node::with_children(
                 final_size,
                 vec![bar
                     .as_widget_mut()
-                    .layout(&mut tree.children[0], renderer, limits)
-                    .move_to((0., 300.))],
+                    .layout(&mut tree.children[0], renderer, &limits)
+                    .move_to((x, y))],
             ),
             None => layout::Node::new(final_size),
         }
@@ -204,7 +222,7 @@ where
         if let Some(bar) = &mut self.status_bar {
             bar.as_widget_mut().operate(
                 &mut state.children[0],
-                layout.children().next().unwrap(),
+                layout.child(0),
                 renderer,
                 operation,
             );
@@ -220,11 +238,10 @@ where
         cursor: iced_core::mouse::Cursor,
         viewport: &iced_core::Rectangle,
     ) {
-        let Some(data) = self.video.frame_data() else {
+        let video_size: &VideoState = tree.state.downcast_ref();
+        let Some(image_size) = video_size.size else {
             return;
         };
-        let (width, height) = data.size();
-        let image_size = iced_core::Size::new(width as f32, height as f32);
         let bounds = layout.bounds();
         let adjusted_fit = self.content_fit.fit(image_size, bounds.size());
         let scale = iced_core::Vector::new(
@@ -269,17 +286,20 @@ where
         } else {
             render(renderer);
         }
-        if let Some(viewport) = layout.bounds().intersection(viewport) {
+
+        if let Some(viewport) = drawing_bounds.intersection(viewport) {
             if let Some(status_bar) = &self.status_bar {
-                status_bar.as_widget().draw(
-                    &tree.children[0],
-                    renderer,
-                    theme,
-                    style,
-                    layout.children().next().unwrap(),
-                    cursor,
-                    &viewport,
-                );
+                renderer.with_layer(viewport, |renderer| {
+                    status_bar.as_widget().draw(
+                        &tree.children[0],
+                        renderer,
+                        theme,
+                        style,
+                        layout.child(0),
+                        cursor,
+                        &viewport,
+                    )
+                });
             }
         }
     }
@@ -300,6 +320,12 @@ where
         };
         if self.video.is_none() {
             return;
+        }
+        if let Some(data) = self.video.frame_data() {
+            let (width, height) = data.size();
+            let image_size = iced_core::Size::new(width as f32, height as f32);
+            let state: &mut VideoState = tree.state.downcast_mut();
+            state.size = Some(image_size);
         }
         let state_o = self.video.state().unwrap();
         let mut state = state_o.write().unwrap();
@@ -393,7 +419,7 @@ where
             status_bar.as_widget_mut().update(
                 &mut tree.children[0],
                 event,
-                layout.children().next().unwrap(),
+                layout.child(0),
                 cursor,
                 renderer,
                 clipboard,
