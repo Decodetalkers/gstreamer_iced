@@ -79,8 +79,7 @@ impl GProgram {
             GIcedMessage::Jump(step) => {
                 self.video
                     .as_url()
-                    .seek(std::time::Duration::from_secs(step as u64 * 8))
-                    .unwrap();
+                    .seek(std::time::Duration::from_secs(step as u64 * 8));
                 iced::Task::none()
             }
             GIcedMessage::DurationChanged(duration) => {

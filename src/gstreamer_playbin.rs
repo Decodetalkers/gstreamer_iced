@@ -1,4 +1,3 @@
-use gst::GenericFormattedValue;
 use gst::prelude::*;
 use gstreamer as gst;
 use gstreamer_app as gst_app;
@@ -14,21 +13,16 @@ pub type GVideoUrl = GVideoInner<0>;
 
 impl GVideoUrl {
     /// Seak to a position
-    pub fn seek<T>(&self, position: T) -> Result<(), IcedGStreamerError>
+    pub fn seek<T>(&self, position: T)
     where
         T: Into<Position>,
     {
         let pos: Position = position.into();
         if self.play_state() == gst::State::Null {
             self.set_state(gst::State::Playing);
-            let mut pending_events = self.pending_events.write().unwrap();
-            pending_events.push(GsEvent::Jump(pos));
-            return Ok(());
         }
-        let position: GenericFormattedValue = pos.into();
-        self.source.seek_simple(gst::SeekFlags::FLUSH, position)?;
-
-        Ok(())
+        let mut pending_events = self.pending_events.write().unwrap();
+        pending_events.push(GsEvent::Jump(pos));
     }
 
     /// accept url like from local or from http

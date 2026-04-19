@@ -19,7 +19,7 @@ use thiserror::Error;
 pub mod reexport {
     pub use url;
 }
-pub use video_player::{Catalog, VideoPlayer};
+pub use video_player::{Catalog, VideoPlayer, primary, video_background_primary};
 
 pub use gst::State as PlayingState;
 

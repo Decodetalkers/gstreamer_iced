@@ -1,7 +1,7 @@
 use gstreamer_iced::*;
 use iced::widget::container;
 use iced::widget::{button, column, row, slider, text};
-use iced::{Element, Length};
+use iced::{Color, Element, Length};
 use std::time::Duration;
 
 fn main() -> iced::Result {
@@ -42,24 +42,8 @@ impl GProgram {
                     .on_press(GIcedMessage::RequestStateChange(PlayingState::Playing)),
             }
             .into();
-        let video = VideoPlayer::new(&self.video)
-            .on_position_changed(GIcedMessage::PositionChanged)
-            .on_duration_changed(GIcedMessage::DurationChanged)
-            .on_state_changed(GIcedMessage::StateChanged)
-            .status_bar(
-                container(
-                    button(text("hello").width(Length::Fill).center())
-                        .width(Length::Fill)
-                        .height(Length::Fill)
-                        .on_press(GIcedMessage::VolChange(0.1)),
-                )
-                .height(Length::Fill)
-                .center_x(Length::Fill)
-                .center_y(Length::Fill),
-            )
-            .width(Length::Fill);
-
-        let pos_status = text(format!("{:.1} s/{:.1} s", current_pos, fullduration));
+        let pos_status =
+            text(format!("{:.1} s/{:.1} s", current_pos, fullduration)).color(Color::WHITE);
         let du_silder = slider(0..=duration, pos, GIcedMessage::Jump);
 
         let add_vol = button(text("+")).on_press(GIcedMessage::VolChange(0.1));
@@ -73,16 +57,22 @@ impl GProgram {
             .padding(2)
             .width(Length::Fill);
 
-        container(column![
-            video,
+        let bar = container(column![
             duration_component,
             container(btn).width(Length::Fill).center_x(Length::Fill)
         ])
         .width(Length::Fill)
         .height(Length::Fill)
         .center_x(Length::Fill)
-        .center_y(Length::Fill)
-        .into()
+        .center_y(Length::Fill);
+        VideoPlayer::new(&self.video)
+            .on_position_changed(GIcedMessage::PositionChanged)
+            .on_duration_changed(GIcedMessage::DurationChanged)
+            .on_state_changed(GIcedMessage::StateChanged)
+            .status_bar(bar)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into()
     }
 
     fn update(&mut self, message: GIcedMessage) -> iced::Task<GIcedMessage> {
@@ -90,8 +80,7 @@ impl GProgram {
             GIcedMessage::Jump(step) => {
                 self.video
                     .as_url()
-                    .seek(std::time::Duration::from_secs(step as u64 * 8))
-                    .unwrap();
+                    .seek(std::time::Duration::from_secs(step as u64 * 8));
                 iced::Task::none()
             }
             GIcedMessage::DurationChanged(duration) => {

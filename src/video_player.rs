@@ -19,7 +19,7 @@ use std::time::{Duration, Instant};
 /// the theme will provide the style.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Style {
-    /// The [`Background`] of the button.
+    /// The [`Background`] of the video
     pub background: Option<Background>,
     /// The text [`Color`] of the button.
     pub text_color: Color,
@@ -29,6 +29,8 @@ pub struct Style {
     pub shadow: Shadow,
     /// Whether the button should be snapped to the pixel grid.
     pub snap: bool,
+
+    pub video_background: Color,
 }
 
 impl Style {
@@ -39,6 +41,13 @@ impl Style {
             ..self
         }
     }
+    /// Updates the [`Style`] with the given [`Background`].
+    pub fn with_video_background(self, video_background: Color) -> Self {
+        Self {
+            video_background,
+            ..self
+        }
+    }
 }
 
 impl Default for Style {
@@ -46,6 +55,7 @@ impl Default for Style {
         Self {
             background: None,
             text_color: Color::BLACK,
+            video_background: Color::BLACK,
             border: Border::default(),
             shadow: Shadow::default(),
             snap: false,
@@ -77,6 +87,7 @@ impl Catalog for Theme {
         class(self)
     }
 }
+
 fn styled(color: Color) -> Style {
     Style {
         background: Some(Background::Color(color)),
@@ -84,10 +95,19 @@ fn styled(color: Color) -> Style {
         ..Style::default()
     }
 }
+
 /// A primary button; denoting a main action.
 pub fn primary(theme: &Theme) -> Style {
     let palette = theme.palette();
     styled(palette.primary)
+}
+
+/// A way to set the background color for video
+pub fn video_background_primary<'a>(video_background: Color) -> impl Fn(&Theme) -> Style + 'a {
+    move |theme| Style {
+        video_background,
+        ..primary(theme)
+    }
 }
 
 /// VideoPlayer, whose backend is gstreamer
@@ -107,6 +127,7 @@ where
     on_state_changed: Option<Box<dyn Fn(State) -> Message + 'a>>,
     status_bar: Option<Element<'a, Message, Theme, Renderer>>,
     status_bar_delay: u64,
+    status_bar_height: f32,
     class: Theme::Class<'a>,
     _theme: PhantomData<Theme>,
     _message: PhantomData<Message>,
@@ -132,6 +153,7 @@ where
             on_state_changed: None,
             status_bar: None,
             status_bar_delay: 2,
+            status_bar_height: 70.,
             class: Theme::default(),
             _theme: PhantomData,
             _message: PhantomData,
@@ -213,7 +235,12 @@ where
             ..self
         }
     }
-
+    pub fn status_bar_height(self, status_bar_height: f32) -> Self {
+        VideoPlayer {
+            status_bar_height,
+            ..self
+        }
+    }
     pub fn status_bar_delay(self, status_bar_delay: u64) -> Self {
         VideoPlayer {
             status_bar_delay,
@@ -231,12 +258,10 @@ where
     }
 }
 
-const HEIGHT: f32 = 40.;
-
 struct VideoState {
     size: Option<iced_core::Size>,
     instant: Instant,
-    show: bool,
+    status_bar_shown: bool,
 }
 
 impl<Message, Theme, Renderer> Widget<Message, Theme, Renderer>
@@ -263,7 +288,7 @@ where
             instant: Instant::now()
                 .checked_add(Duration::from_secs(self.status_bar_delay))
                 .unwrap(),
-            show: false,
+            status_bar_shown: false,
         })
     }
 
@@ -292,13 +317,17 @@ where
         };
 
         let limits = iced_core::layout::Limits::new(
-            limits.min(),
+            iced_core::Size {
+                width: limits.min().width,
+                height: self.status_bar_height,
+            },
             iced_core::Size {
                 width: raw_size.width,
-                height: HEIGHT,
+                height: self.status_bar_height,
             },
         );
-        let y = final_size.height - HEIGHT;
+
+        let y = final_size.height - self.status_bar_height;
 
         match &mut self.status_bar {
             Some(bar) => layout::Node::with_children(
@@ -362,13 +391,30 @@ where
                 shadow: vstyle.shadow,
                 snap: vstyle.snap,
             },
-            Background::Color(Color::BLACK),
+            vstyle.video_background,
         );
+        let video_state: &VideoState = tree.state.downcast_ref();
+        if video_state.status_bar_shown
+            && let Some(status_bar) = &self.status_bar
+            && cursor.is_over(*viewport)
+        {
+            renderer.with_layer(*viewport, |renderer| {
+                status_bar.as_widget().draw(
+                    &tree.children[0],
+                    renderer,
+                    theme,
+                    style,
+                    layout.child(0),
+                    cursor,
+                    viewport,
+                )
+            });
+        }
         let alive = self.video.alive().unwrap().load(Ordering::Relaxed);
         if !alive {
             return;
         }
-        let video_state: &VideoState = tree.state.downcast_ref();
+
         let Some(image_size) = video_state.size else {
             return;
         };
@@ -416,23 +462,6 @@ where
         } else {
             render(renderer);
         }
-
-        if video_state.show
-            && let Some(status_bar) = &self.status_bar
-            && cursor.is_over(*viewport)
-        {
-            renderer.with_layer(*viewport, |renderer| {
-                status_bar.as_widget().draw(
-                    &tree.children[0],
-                    renderer,
-                    theme,
-                    style,
-                    layout.child(0),
-                    cursor,
-                    viewport,
-                )
-            });
-        }
     }
     fn update(
         &mut self,
@@ -446,7 +475,9 @@ where
         viewport: &iced_core::Rectangle,
     ) {
         let state: &mut VideoState = tree.state.downcast_mut();
-        if let Some(status_bar) = &mut self.status_bar {
+        if let Some(status_bar) = &mut self.status_bar
+            && state.status_bar_shown
+        {
             status_bar.as_widget_mut().update(
                 &mut tree.children[0],
                 event,
@@ -465,15 +496,15 @@ where
                 state.instant = Instant::now()
                     .checked_add(Duration::from_secs(self.status_bar_delay))
                     .unwrap();
-                state.show = true;
+                state.status_bar_shown = true;
                 return;
             }
             _ => {
                 return;
             }
         };
-        if state.instant < Instant::now() && state.show {
-            state.show = false;
+        if state.instant < Instant::now() && state.status_bar_shown {
+            state.status_bar_shown = false;
         }
         if self.video.is_none() {
             return;
@@ -606,7 +637,7 @@ where
         renderer: &Renderer,
     ) -> iced_core::mouse::Interaction {
         let video_state: &VideoState = tree.state.downcast_ref();
-        if !video_state.show {
+        if !video_state.status_bar_shown {
             return iced_core::mouse::Interaction::Hidden;
         }
         if let Some(status_bar) = &self.status_bar {
