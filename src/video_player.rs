@@ -419,7 +419,7 @@ where
                     style,
                     layout.child(0),
                     cursor,
-                    &viewport,
+                    viewport,
                 )
             });
         }

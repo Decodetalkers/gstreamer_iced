@@ -5,7 +5,7 @@ use gstreamer_app as gst_app;
 use std::{
     os::fd::RawFd,
     path::Path,
-    sync::{atomic::AtomicBool, Arc, Mutex, RwLock},
+    sync::{Arc, Mutex, RwLock, atomic::AtomicBool},
 };
 
 /// The main container for a gstreamer task

@@ -4,9 +4,9 @@ mod id;
 mod pipeline;
 mod video_player;
 
+use gst::GenericFormattedValue;
 use gst::glib;
 use gst::prelude::*;
-use gst::GenericFormattedValue;
 use gstreamer as gst;
 use std::hash::Hash;
 use std::os::fd::RawFd;
