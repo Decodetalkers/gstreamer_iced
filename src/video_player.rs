@@ -526,7 +526,12 @@ where
             }
             state.volume = self.video.source().unwrap().property("volume");
         }
-        shell.request_redraw();
+        if matches!(
+            self.video.play_state(),
+            gst::State::Playing | gst::State::Ready
+        ) {
+            shell.request_redraw();
+        }
 
         while let Some(msg) = self.video.bus().unwrap().pop_filtered(&[
             gst::MessageType::Error,
