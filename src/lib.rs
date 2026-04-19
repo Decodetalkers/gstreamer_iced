@@ -19,7 +19,7 @@ use thiserror::Error;
 pub mod reexport {
     pub use url;
 }
-pub use video_player::VideoPlayer;
+pub use video_player::{Catalog, VideoPlayer};
 
 pub use gst::State as PlayingState;
 
@@ -286,10 +286,9 @@ impl GVideo {
         };
         url_player
     }
-
     /// cast the file from [GVideo] to [GVideoPipewire], if not match, then panic
     pub fn as_pw(&self) -> &GVideoPipewire {
-        let Self::PipeWire(pw_instance) = &self else {
+        let Self::PipeWire(pw_instance) = self else {
             panic!("Not this type");
         };
         pw_instance
@@ -379,6 +378,26 @@ impl GVideo {
             }
         }
     }
+    pub(crate) fn pending_events(&self) -> Vec<GsEvent> {
+        let mut events = vec![];
+        match self {
+            Self::None => return vec![],
+            Self::PipeWire(pw) => {
+                let mut pending_events = pw.pending_events.write().unwrap();
+                std::mem::swap(&mut *pending_events, &mut events);
+            }
+            Self::UrlPlayer(player) => {
+                let mut pending_events = player.pending_events.write().unwrap();
+                std::mem::swap(&mut *pending_events, &mut events);
+            }
+        }
+        events
+    }
+}
+
+#[derive(Debug)]
+pub(crate) enum GsEvent {
+    Jump(Position),
 }
 
 /// The main container for a gstreamer task
@@ -391,6 +410,7 @@ pub struct GVideoInner<const X: usize> {
     alive: Arc<AtomicBool>,
     frame: Arc<Mutex<Option<FrameData>>>,
     id: id::Id,
+    pending_events: RwLock<Vec<GsEvent>>,
 }
 
 #[derive(Debug, Error)]

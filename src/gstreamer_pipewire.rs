@@ -85,6 +85,7 @@ impl GVideoPipewire {
             frame,
             alive: Arc::new(AtomicBool::new(true)),
             id: crate::id::Id::unique(),
+            pending_events: RwLock::new(vec![]),
         })
     }
 
@@ -206,6 +207,7 @@ impl GVideoPipewire {
             frame,
             alive: Arc::new(AtomicBool::new(true)),
             id: crate::id::Id::unique(),
+            pending_events: RwLock::new(vec![]),
         })
     }
 }

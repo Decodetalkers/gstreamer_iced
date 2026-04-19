@@ -6,6 +6,7 @@ use crate::StreamType;
 use crate::pipeline::VideoPrimitive;
 use gst::State;
 use gstreamer as gst;
+use gstreamer::GenericFormattedValue;
 use gstreamer::glib;
 use gstreamer::prelude::*;
 use iced_core::{Background, Border, Color, Element, Shadow, Theme, Widget, border, layout};
@@ -218,6 +219,15 @@ where
             status_bar_delay,
             ..self
         }
+    }
+
+    #[must_use]
+    pub fn style(mut self, style: impl Fn(&Theme) -> Style + 'a) -> Self
+    where
+        Theme::Class<'a>: From<StyleFn<'a, Theme>>,
+    {
+        self.class = (Box::new(style) as StyleFn<'a, Theme>).into();
+        self
     }
 }
 
@@ -474,10 +484,25 @@ where
 
             state.size = Some(image_size);
         }
+
+        let alive = self.video.alive().unwrap().load(Ordering::Relaxed);
+
         let state_o = self.video.state().unwrap();
         let mut state = state_o.write().unwrap();
-        let alive = self.video.alive().unwrap().load(Ordering::Relaxed);
+
         if self.video.stream_type() == StreamType::UrlPlayer && alive {
+            for event in self.video.pending_events() {
+                match event {
+                    crate::GsEvent::Jump(position) => {
+                        let position: GenericFormattedValue = position.into();
+                        let _ = self
+                            .video
+                            .source()
+                            .unwrap()
+                            .seek_simple(gst::SeekFlags::FLUSH, position);
+                    }
+                }
+            }
             if state.get_duration_attempt && self.video.play_state() == gst::State::Playing {
                 loop {
                     self.video
@@ -580,6 +605,10 @@ where
         viewport: &iced_core::Rectangle,
         renderer: &Renderer,
     ) -> iced_core::mouse::Interaction {
+        let video_state: &VideoState = tree.state.downcast_ref();
+        if !video_state.show {
+            return iced_core::mouse::Interaction::Hidden;
+        }
         if let Some(status_bar) = &self.status_bar {
             return status_bar.as_widget().mouse_interaction(
                 &tree.children[0],
