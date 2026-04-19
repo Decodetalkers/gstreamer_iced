@@ -314,6 +314,18 @@ where
         shell: &mut iced_core::Shell<'_, Message>,
         viewport: &iced_core::Rectangle,
     ) {
+        if let Some(status_bar) = &mut self.status_bar {
+            status_bar.as_widget_mut().update(
+                &mut tree.children[0],
+                event,
+                layout.child(0),
+                cursor,
+                renderer,
+                clipboard,
+                shell,
+                viewport,
+            );
+        }
         let iced_core::Event::Window(iced_core::window::Event::RedrawRequested(_instant)) = event
         else {
             return;
@@ -415,18 +427,26 @@ where
                 _ => {}
             }
         }
-        if let Some(status_bar) = &mut self.status_bar {
-            status_bar.as_widget_mut().update(
-                &mut tree.children[0],
-                event,
+    }
+
+    fn mouse_interaction(
+        &self,
+        tree: &iced_core::widget::Tree,
+        layout: layout::Layout<'_>,
+        cursor: iced_core::mouse::Cursor,
+        viewport: &iced_core::Rectangle,
+        renderer: &Renderer,
+    ) -> iced_core::mouse::Interaction {
+        if let Some(status_bar) = &self.status_bar {
+            return status_bar.as_widget().mouse_interaction(
+                &tree.children[0],
                 layout.child(0),
                 cursor,
-                renderer,
-                clipboard,
-                shell,
                 viewport,
+                renderer,
             );
         }
+        iced_core::mouse::Interaction::default()
     }
 }
 
