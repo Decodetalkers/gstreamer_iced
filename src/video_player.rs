@@ -25,6 +25,7 @@ pub struct VideoPlayer<'a, Message, Theme = iced_core::Theme, Renderer = iced_re
     on_position_changed: Option<Box<dyn Fn(Duration) -> Message + 'a>>,
     on_state_changed: Option<Box<dyn Fn(State) -> Message + 'a>>,
     status_bar: Option<Element<'a, Message, Theme, Renderer>>,
+    status_bar_delay: u64,
     _theme: PhantomData<Theme>,
     _message: PhantomData<Message>,
     _renderer: PhantomData<Renderer>,
@@ -47,6 +48,7 @@ where
             on_position_changed: None,
             on_state_changed: None,
             status_bar: None,
+            status_bar_delay: 2,
             _theme: PhantomData,
             _message: PhantomData,
             _renderer: PhantomData,
@@ -127,6 +129,13 @@ where
             ..self
         }
     }
+
+    pub fn status_bar_delay(self, status_bar_delay: u64) -> Self {
+        VideoPlayer {
+            status_bar_delay,
+            ..self
+        }
+    }
 }
 
 const HEIGHT: f32 = 40.;
@@ -157,7 +166,9 @@ where
     fn state(&self) -> iced_core::widget::tree::State {
         iced_core::widget::tree::State::new(VideoState {
             size: None,
-            instant: Instant::now().checked_add(Duration::from_secs(2)).unwrap(),
+            instant: Instant::now()
+                .checked_add(Duration::from_secs(self.status_bar_delay))
+                .unwrap(),
             show: false,
         })
     }
@@ -345,7 +356,9 @@ where
         let _instant = match event {
             iced_core::Event::Window(iced_core::window::Event::RedrawRequested(instant)) => instant,
             iced_core::Event::Mouse(_) => {
-                state.instant = Instant::now().checked_add(Duration::from_secs(2)).unwrap();
+                state.instant = Instant::now()
+                    .checked_add(Duration::from_secs(self.status_bar_delay))
+                    .unwrap();
                 state.show = true;
                 return;
             }
