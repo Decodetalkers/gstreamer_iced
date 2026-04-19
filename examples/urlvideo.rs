@@ -19,7 +19,7 @@ struct GProgram {
 }
 #[derive(Debug, Clone)]
 enum GIcedMessage {
-    Jump(u8),
+    Jump(f64),
     VolChange(f64),
     RequestStateChange(PlayingState),
     DurationChanged(Duration),
@@ -29,10 +29,8 @@ enum GIcedMessage {
 
 impl GProgram {
     fn view(&'_ self) -> iced::Element<'_, GIcedMessage> {
-        let fullduration = self.duration.as_secs_f64();
-        let current_pos = self.position.as_secs_f64();
-        let duration = (fullduration / 8.0) as u8;
-        let pos = (current_pos / 8.0) as u8;
+        let duration = self.duration.as_secs_f64();
+        let pos = self.position.as_secs_f64();
 
         let btn: Element<GIcedMessage> =
             match self.state {
@@ -42,9 +40,8 @@ impl GProgram {
                     .on_press(GIcedMessage::RequestStateChange(PlayingState::Playing)),
             }
             .into();
-        let pos_status =
-            text(format!("{:.1} s/{:.1} s", current_pos, fullduration)).color(Color::WHITE);
-        let du_silder = slider(0..=duration, pos, GIcedMessage::Jump);
+        let pos_status = text(format!("{:.1} s/{:.1} s", pos, duration)).color(Color::WHITE);
+        let du_silder = slider(0.0..=duration, pos, GIcedMessage::Jump);
 
         let add_vol = button(text("+")).on_press(GIcedMessage::VolChange(0.1));
         let min_vol = button(text("-")).on_press(GIcedMessage::VolChange(-0.1));
@@ -80,7 +77,7 @@ impl GProgram {
             GIcedMessage::Jump(step) => {
                 self.video
                     .as_url()
-                    .seek(std::time::Duration::from_secs(step as u64 * 8));
+                    .seek(std::time::Duration::from_secs(step as u64));
                 iced::Task::none()
             }
             GIcedMessage::DurationChanged(duration) => {
