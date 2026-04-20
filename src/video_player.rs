@@ -9,7 +9,7 @@ use gstreamer as gst;
 use gstreamer::GenericFormattedValue;
 use gstreamer::glib;
 use gstreamer::prelude::*;
-use iced_core::{Background, Border, Color, Element, Shadow, Theme, Widget, border, layout};
+use iced_core::{Background, Border, Color, Element, Shadow, Theme, Widget, border, layout, svg};
 use iced_wgpu::primitive::Renderer as PrimitiveRenderer;
 use std::time::{Duration, Instant};
 
@@ -136,7 +136,7 @@ where
 
 impl<'a, Message, Theme, Renderer> VideoPlayer<'a, Message, Theme, Renderer>
 where
-    Renderer: PrimitiveRenderer,
+    Renderer: PrimitiveRenderer + svg::Renderer,
     Theme: Catalog,
 {
     /// create a new video player
