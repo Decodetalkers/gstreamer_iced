@@ -13,6 +13,9 @@ use iced_core::{Background, Border, Color, Element, Shadow, Theme, Widget, borde
 use iced_wgpu::primitive::Renderer as PrimitiveRenderer;
 use std::time::{Duration, Instant};
 
+const PLAY_ICON: &[u8] = include_bytes!("../misc/play.svg");
+const PAUSE_ICON: &[u8] = include_bytes!("../misc/pause.svg");
+
 /// The style of a button.
 ///
 /// If not specified with [`Button::style`]
@@ -54,7 +57,7 @@ impl Default for Style {
     fn default() -> Self {
         Self {
             background: None,
-            text_color: Color::BLACK,
+            text_color: Color::WHITE,
             video_background: Color::BLACK,
             border: Border::default(),
             shadow: Shadow::default(),
@@ -129,6 +132,8 @@ where
     status_bar_delay: u64,
     status_bar_height: f32,
     class: Theme::Class<'a>,
+    play_icon: svg::Handle,
+    pause_icon: svg::Handle,
     _theme: PhantomData<Theme>,
     _message: PhantomData<Message>,
     _renderer: PhantomData<Renderer>,
@@ -155,6 +160,8 @@ where
             status_bar_delay: 2,
             status_bar_height: 70.,
             class: Theme::default(),
+            play_icon: svg::Handle::from_memory(PLAY_ICON),
+            pause_icon: svg::Handle::from_memory(PAUSE_ICON),
             _theme: PhantomData,
             _message: PhantomData,
             _renderer: PhantomData,
@@ -257,7 +264,63 @@ where
         self
     }
 }
+impl<'a, Message, Theme, Renderer> VideoPlayer<'a, Message, Theme, Renderer>
+where
+    Renderer: svg::Renderer,
+    Theme: Catalog,
+{
+    fn draw_icon(
+        &self,
+        _state: &iced_core::widget::Tree,
+        renderer: &mut Renderer,
+        theme: &Theme,
+        _style: &iced_core::renderer::Style,
+        layout: iced_core::layout::Layout<'_>,
+        _cursor: iced_core::mouse::Cursor,
+        viewport: &iced_core::Rectangle,
+    ) {
+        use iced_core::{ContentFit, Point, Rectangle, Size, Vector};
+        let Size { width, height } = renderer.measure_svg(&self.play_icon);
+        let image_size = Size::new(width as f32, height as f32);
 
+        let bounds = layout.bounds();
+        let adjusted_fit = self.content_fit.fit(image_size, bounds.size() / 5.);
+        let scale = Vector::new(
+            adjusted_fit.width / image_size.width,
+            adjusted_fit.height / image_size.height,
+        );
+
+        let final_size = image_size * scale;
+
+        let position = match self.content_fit {
+            ContentFit::None => Point::new(
+                bounds.x + (image_size.width - adjusted_fit.width) / 2.0,
+                bounds.y + (image_size.height - adjusted_fit.height) / 2.0,
+            ),
+            _ => Point::new(
+                bounds.center_x() - final_size.width / 2.0,
+                bounds.center_y() - final_size.height / 2.0,
+            ),
+        };
+
+        let drawing_bounds = Rectangle::new(position, final_size);
+
+        let style = theme.style(&self.class);
+
+        renderer.with_layer(*viewport, |renderer| {
+            renderer.draw_svg(
+                svg::Svg {
+                    handle: self.play_icon.clone(),
+                    color: style.text_color.into(),
+                    rotation: iced_core::Radians(0.),
+                    opacity: 1.,
+                },
+                drawing_bounds,
+                bounds,
+            )
+        });
+    }
+}
 struct VideoState {
     size: Option<iced_core::Size>,
     instant: Instant,
@@ -268,7 +331,7 @@ impl<Message, Theme, Renderer> Widget<Message, Theme, Renderer>
     for VideoPlayer<'_, Message, Theme, Renderer>
 where
     Message: Clone,
-    Renderer: PrimitiveRenderer,
+    Renderer: PrimitiveRenderer + svg::Renderer,
     Theme: Catalog,
 {
     fn size(&self) -> iced_core::Size<iced_core::Length> {
@@ -409,7 +472,9 @@ where
                     viewport,
                 )
             });
+            self.draw_icon(tree, renderer, theme, style, layout, cursor, viewport);
         }
+
         let alive = self.video.alive().unwrap().load(Ordering::Relaxed);
         if !alive {
             return;
@@ -658,7 +723,7 @@ impl<'a, Message, Theme, Renderer> From<VideoPlayer<'a, Message, Theme, Renderer
 where
     Message: 'a + Clone,
     Theme: 'a,
-    Renderer: 'a + PrimitiveRenderer,
+    Renderer: 'a + PrimitiveRenderer + svg::Renderer,
     Theme: Catalog,
 {
     fn from(video_player: VideoPlayer<'a, Message, Theme, Renderer>) -> Self {
