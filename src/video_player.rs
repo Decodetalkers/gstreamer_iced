@@ -9,7 +9,10 @@ use gstreamer as gst;
 use gstreamer::GenericFormattedValue;
 use gstreamer::glib;
 use gstreamer::prelude::*;
-use iced_core::{Background, Border, Color, Element, Shadow, Theme, Widget, border, layout, svg};
+use iced_core::{
+    Background, Border, Color, ContentFit, Element, Point, Rectangle, Shadow, Size, Theme, Vector,
+    Widget, border, layout, svg,
+};
 use iced_wgpu::primitive::Renderer as PrimitiveRenderer;
 use std::time::{Duration, Instant};
 
@@ -271,20 +274,20 @@ where
 {
     fn draw_icon(
         &self,
-        _state: &iced_core::widget::Tree,
         renderer: &mut Renderer,
         theme: &Theme,
-        _style: &iced_core::renderer::Style,
         layout: iced_core::layout::Layout<'_>,
-        _cursor: iced_core::mouse::Cursor,
         viewport: &iced_core::Rectangle,
+        opacity: f32,
     ) {
         use iced_core::{ContentFit, Point, Rectangle, Size, Vector};
         let Size { width, height } = renderer.measure_svg(&self.play_icon);
         let image_size = Size::new(width as f32, height as f32);
 
         let bounds = layout.bounds();
-        let adjusted_fit = self.content_fit.fit(image_size, bounds.size() / 5.);
+        let adjusted_fit = self
+            .content_fit
+            .fit(image_size, bounds.size() / PLAY_ICON_SCALE);
         let scale = Vector::new(
             adjusted_fit.width / image_size.width,
             adjusted_fit.height / image_size.height,
@@ -313,19 +316,66 @@ where
                     handle: self.play_icon.clone(),
                     color: style.text_color.into(),
                     rotation: iced_core::Radians(0.),
-                    opacity: 1.,
+                    opacity,
                 },
                 drawing_bounds,
                 bounds,
-            )
+            );
+            renderer.draw_svg(
+                svg::Svg {
+                    handle: self.pause_icon.clone(),
+                    color: style.text_color.into(),
+                    rotation: iced_core::Radians(0.),
+                    opacity: 1. - opacity,
+                },
+                drawing_bounds,
+                bounds,
+            );
         });
     }
 }
+
+#[derive(Debug, Clone, Copy)]
+enum Direction {
+    Playing,
+    Pause,
+}
+
 struct VideoState {
     size: Option<iced_core::Size>,
     icon_size: Option<iced_core::Size>,
     instant: Instant,
     status_bar_shown: bool,
+    icon_instant: Instant,
+    direction: Direction,
+    opacity: f32,
+}
+
+const PLAY_ICON_SCALE: f32 = 6.0;
+
+impl VideoState {
+    fn skip_opacity_change(&self) -> bool {
+        match (self.direction, self.opacity) {
+            (Direction::Pause, 0.) | (Direction::Playing, 1.) => true,
+            _ => false,
+        }
+    }
+    fn opacity_change(&mut self) {
+        if self.skip_opacity_change() {
+            return;
+        }
+        let duration = Instant::now() - self.icon_instant;
+        let timestamp = duration.as_secs_f32();
+
+        match self.direction {
+            Direction::Playing => {
+                self.opacity = (self.opacity + timestamp).min(1.);
+            }
+            Direction::Pause => {
+                self.opacity = (self.opacity - timestamp).max(0.);
+            }
+        }
+    }
 }
 
 impl<Message, Theme, Renderer> Widget<Message, Theme, Renderer>
@@ -347,13 +397,22 @@ where
     }
 
     fn state(&self) -> iced_core::widget::tree::State {
+        let (opacity, direction) = if self.video.play_state() == gst::State::Playing {
+            (0., Direction::Pause)
+        } else {
+            (1., Direction::Playing)
+        };
         iced_core::widget::tree::State::new(VideoState {
             size: None,
             icon_size: None,
             instant: Instant::now()
                 .checked_add(Duration::from_secs(self.status_bar_delay))
                 .unwrap(),
+
             status_bar_shown: false,
+            icon_instant: Instant::now().checked_add(Duration::from_secs(1)).unwrap(),
+            direction,
+            opacity,
         })
     }
 
@@ -478,7 +537,7 @@ where
                     viewport,
                 )
             });
-            self.draw_icon(tree, renderer, theme, style, layout, cursor, viewport);
+            self.draw_icon(renderer, theme, layout, viewport, video_state.opacity);
         }
 
         let alive = self.video.alive().unwrap().load(Ordering::Relaxed);
@@ -545,9 +604,9 @@ where
         shell: &mut iced_core::Shell<'_, Message>,
         viewport: &iced_core::Rectangle,
     ) {
-        let state: &mut VideoState = tree.state.downcast_mut();
+        let video_state: &mut VideoState = tree.state.downcast_mut();
         if let Some(status_bar) = &mut self.status_bar
-            && state.status_bar_shown
+            && video_state.status_bar_shown
         {
             status_bar.as_widget_mut().update(
                 &mut tree.children[0],
@@ -561,31 +620,68 @@ where
             );
         }
 
+        video_state.opacity_change();
         let _instant = match event {
             iced_core::Event::Window(iced_core::window::Event::RedrawRequested(instant)) => instant,
-            iced_core::Event::Mouse(_) => {
-                state.instant = Instant::now()
+            iced_core::Event::Mouse(event) => {
+                video_state.instant = Instant::now()
                     .checked_add(Duration::from_secs(self.status_bar_delay))
                     .unwrap();
-                state.status_bar_shown = true;
+                video_state.status_bar_shown = true;
                 shell.request_redraw();
+                if let Some(icon_size) = video_state.icon_size
+                    && let iced_core::mouse::Event::ButtonPressed(iced_core::mouse::Button::Left) =
+                        event
+                {
+                    let bounds = layout.bounds();
+                    let adjusted_fit = self
+                        .content_fit
+                        .fit(icon_size, bounds.size() / PLAY_ICON_SCALE);
+                    let scale = Vector::new(
+                        adjusted_fit.width / icon_size.width,
+                        adjusted_fit.height / icon_size.height,
+                    );
+
+                    let final_size = icon_size * scale;
+
+                    let position = match self.content_fit {
+                        ContentFit::None => Point::new(
+                            bounds.x + (icon_size.width - adjusted_fit.width) / 2.0,
+                            bounds.y + (icon_size.height - adjusted_fit.height) / 2.0,
+                        ),
+                        _ => Point::new(
+                            bounds.center_x() - final_size.width / 2.0,
+                            bounds.center_y() - final_size.height / 2.0,
+                        ),
+                    };
+
+                    let drawing_bounds = Rectangle::new(position, final_size);
+                    if cursor.is_over(drawing_bounds) {
+                        if self.video.play_state() == gst::State::Playing {
+                            self.video.set_state(gst::State::Paused);
+                        } else {
+                            self.video.set_state(gst::State::Playing);
+                        }
+                    }
+                }
+
                 return;
             }
             _ => {
                 return;
             }
         };
-        if state.instant < Instant::now() && state.status_bar_shown {
-            state.status_bar_shown = false;
+        if video_state.instant < Instant::now() && video_state.status_bar_shown {
+            video_state.status_bar_shown = false;
         }
         if self.video.is_none() {
             return;
         }
         if let Some(data) = self.video.frame_data() {
             let (width, height) = data.size();
-            let image_size = iced_core::Size::new(width as f32, height as f32);
+            let image_size = Size::new(width as f32, height as f32);
 
-            state.size = Some(image_size);
+            video_state.size = Some(image_size);
         }
 
         let alive = self.video.alive().unwrap().load(Ordering::Relaxed);
@@ -693,6 +789,12 @@ where
                     }
                     if let Some(on_state_changed) = &self.on_state_changed {
                         shell.publish(on_state_changed(change.current()));
+                        if change.current() == gst::State::Playing {
+                            video_state.direction = Direction::Pause;
+                        } else {
+                            video_state.direction = Direction::Playing;
+                        }
+                        video_state.icon_instant = Instant::now();
                     }
                 }
                 _ => {}
@@ -708,7 +810,6 @@ where
         _viewport: &iced_core::Rectangle,
         renderer: &Renderer,
     ) -> iced_core::mouse::Interaction {
-        use iced_core::{ContentFit, Point, Rectangle, Vector};
         let video_state: &VideoState = tree.state.downcast_ref();
         if !video_state.status_bar_shown {
             return iced_core::mouse::Interaction::Hidden;
@@ -727,7 +828,9 @@ where
         }
         if let Some(icon_size) = video_state.icon_size {
             let bounds = layout.bounds();
-            let adjusted_fit = self.content_fit.fit(icon_size, bounds.size() / 5.);
+            let adjusted_fit = self
+                .content_fit
+                .fit(icon_size, bounds.size() / PLAY_ICON_SCALE);
             let scale = Vector::new(
                 adjusted_fit.width / icon_size.width,
                 adjusted_fit.height / icon_size.height,
