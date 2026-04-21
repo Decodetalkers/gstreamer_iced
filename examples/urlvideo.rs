@@ -1,7 +1,7 @@
 use gstreamer_iced::*;
 use iced::widget::container;
-use iced::widget::{button, column, row, slider, text};
-use iced::{Color, Element, Length};
+use iced::widget::{button, row, slider, text};
+use iced::{Color, Length};
 use std::time::Duration;
 
 fn main() -> iced::Result {
@@ -21,7 +21,6 @@ struct GProgram {
 enum GIcedMessage {
     Jump(f64),
     VolChange(f64),
-    RequestStateChange(PlayingState),
     DurationChanged(Duration),
     PositionChanged(Duration),
     StateChanged(gstreamer::State),
@@ -32,14 +31,6 @@ impl GProgram {
         let duration = self.duration.as_secs_f64();
         let pos = self.position.as_secs_f64();
 
-        let btn: Element<GIcedMessage> =
-            match self.state {
-                PlayingState::Playing => button(text("[]"))
-                    .on_press(GIcedMessage::RequestStateChange(PlayingState::Paused)),
-                _ => button(text("|>"))
-                    .on_press(GIcedMessage::RequestStateChange(PlayingState::Playing)),
-            }
-            .into();
         let pos_status = text(format!("{:.1} s/{:.1} s", pos, duration)).color(Color::WHITE);
         let du_silder = slider(0.0..=duration, pos, GIcedMessage::Jump);
 
@@ -54,14 +45,12 @@ impl GProgram {
             .padding(2)
             .width(Length::Fill);
 
-        let bar = container(column![
-            duration_component,
-            container(btn).width(Length::Fill).center_x(Length::Fill)
-        ])
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .center_x(Length::Fill)
-        .center_y(Length::Fill);
+        let bar = container(duration_component)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x(Length::Fill)
+            .center_y(Length::Fill);
+
         VideoPlayer::new(&self.video)
             .on_position_changed(GIcedMessage::PositionChanged)
             .on_duration_changed(GIcedMessage::DurationChanged)
@@ -88,10 +77,7 @@ impl GProgram {
                 self.position = position;
                 iced::Task::none()
             }
-            GIcedMessage::RequestStateChange(status) => {
-                self.video.set_state(status);
-                iced::Task::none()
-            }
+
             GIcedMessage::VolChange(vol) => {
                 let currentvol = self.video.as_url().volume();
                 let newvol = currentvol + vol;
