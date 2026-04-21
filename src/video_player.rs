@@ -323,6 +323,7 @@ where
 }
 struct VideoState {
     size: Option<iced_core::Size>,
+    icon_size: Option<iced_core::Size>,
     instant: Instant,
     status_bar_shown: bool,
 }
@@ -348,6 +349,7 @@ where
     fn state(&self) -> iced_core::widget::tree::State {
         iced_core::widget::tree::State::new(VideoState {
             size: None,
+            icon_size: None,
             instant: Instant::now()
                 .checked_add(Duration::from_secs(self.status_bar_delay))
                 .unwrap(),
@@ -365,6 +367,10 @@ where
         let image_size = video_state.size.unwrap_or(limits.max());
         if video_state.size.is_none() {
             video_state.size = Some(image_size);
+        }
+        if video_state.icon_size.is_none() {
+            let iced_core::Size { width, height } = renderer.measure_svg(&self.play_icon);
+            video_state.icon_size = Some(iced_core::Size::new(width as f32, height as f32));
         }
         let raw_size = limits.resolve(self.width, self.height, image_size);
         let full_size = self.content_fit.fit(image_size, raw_size);
@@ -562,6 +568,7 @@ where
                     .checked_add(Duration::from_secs(self.status_bar_delay))
                     .unwrap();
                 state.status_bar_shown = true;
+                shell.request_redraw();
                 return;
             }
             _ => {
@@ -698,21 +705,51 @@ where
         tree: &iced_core::widget::Tree,
         layout: layout::Layout<'_>,
         cursor: iced_core::mouse::Cursor,
-        viewport: &iced_core::Rectangle,
+        _viewport: &iced_core::Rectangle,
         renderer: &Renderer,
     ) -> iced_core::mouse::Interaction {
+        use iced_core::{ContentFit, Point, Rectangle, Vector};
         let video_state: &VideoState = tree.state.downcast_ref();
         if !video_state.status_bar_shown {
             return iced_core::mouse::Interaction::Hidden;
         }
-        if let Some(status_bar) = &self.status_bar {
+        let bar_viewport = layout.child(0).bounds();
+        if let Some(status_bar) = &self.status_bar
+            && cursor.is_over(bar_viewport)
+        {
             return status_bar.as_widget().mouse_interaction(
                 &tree.children[0],
                 layout.child(0),
                 cursor,
-                viewport,
+                &bar_viewport,
                 renderer,
             );
+        }
+        if let Some(icon_size) = video_state.icon_size {
+            let bounds = layout.bounds();
+            let adjusted_fit = self.content_fit.fit(icon_size, bounds.size() / 5.);
+            let scale = Vector::new(
+                adjusted_fit.width / icon_size.width,
+                adjusted_fit.height / icon_size.height,
+            );
+
+            let final_size = icon_size * scale;
+
+            let position = match self.content_fit {
+                ContentFit::None => Point::new(
+                    bounds.x + (icon_size.width - adjusted_fit.width) / 2.0,
+                    bounds.y + (icon_size.height - adjusted_fit.height) / 2.0,
+                ),
+                _ => Point::new(
+                    bounds.center_x() - final_size.width / 2.0,
+                    bounds.center_y() - final_size.height / 2.0,
+                ),
+            };
+
+            let drawing_bounds = Rectangle::new(position, final_size);
+            if cursor.is_over(drawing_bounds) {
+                return iced_core::mouse::Interaction::Pointer;
+            }
         }
         iced_core::mouse::Interaction::default()
     }
