@@ -354,11 +354,12 @@ struct VideoState {
 const PLAY_ICON_SCALE: f32 = 6.0;
 
 impl VideoState {
+    #[inline]
     fn skip_opacity_change(&self) -> bool {
-        match (self.direction, self.opacity) {
-            (Direction::Pause, 0.) | (Direction::Playing, 1.) => true,
-            _ => false,
-        }
+        matches!(
+            (self.direction, self.opacity),
+            (Direction::Pause, 0.) | (Direction::Playing, 1.)
+        )
     }
     fn opacity_change(&mut self) {
         if self.skip_opacity_change() {
