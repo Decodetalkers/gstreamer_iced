@@ -5,9 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-04-22
+
+### Changed
+
+- Fixed the problem that application froze when video is on its end
+- Add a place to add bar for video widget
+- Better example
+- You need to enable svg feature to use this library, because I add a svg button
+  at the center of the video widget
+
+[0.5.0]: https://github.com/Decodetalkers/gstreamer_iced/compare/v0.4.0...v0.5.0
+
 ## [0.4.0] - 2026-03-23
 
 ### Changed
+
 - Support save to file
 - New building pattern api
 
@@ -16,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.2.0] - 2026-03-23
 
 ### Changed
+
 - Add a video components
 - Add publish ci
 - Use NV12 instead of rgba
