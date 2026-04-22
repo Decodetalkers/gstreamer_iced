@@ -27,15 +27,16 @@ const PAUSE_ICON: &[u8] = include_bytes!("../misc/pause.svg");
 pub struct Style {
     /// The [`Background`] of the video
     pub background: Option<Background>,
-    /// The text [`Color`] of the button.
-    pub text_color: Color,
-    /// The [`Border`] of the button.
+    /// The icon [`Color`] of the video.
+    pub icon_color: Color,
+    /// The [`Border`] of the video.
     pub border: Border,
-    /// The [`Shadow`] of the button.
+    /// The [`Shadow`] of the video
     pub shadow: Shadow,
     /// Whether the button should be snapped to the pixel grid.
     pub snap: bool,
 
+    /// The background [`Color`] of the video.
     pub video_background: Color,
 }
 
@@ -60,7 +61,7 @@ impl Default for Style {
     fn default() -> Self {
         Self {
             background: None,
-            text_color: Color::WHITE,
+            icon_color: Color::WHITE,
             video_background: Color::BLACK,
             border: Border::default(),
             shadow: Shadow::default(),
@@ -314,7 +315,7 @@ where
             renderer.draw_svg(
                 svg::Svg {
                     handle: self.play_icon.clone(),
-                    color: style.text_color.into(),
+                    color: style.icon_color.into(),
                     rotation: iced_core::Radians(0.),
                     opacity,
                 },
@@ -324,7 +325,7 @@ where
             renderer.draw_svg(
                 svg::Svg {
                     handle: self.pause_icon.clone(),
-                    color: style.text_color.into(),
+                    color: style.icon_color.into(),
                     rotation: iced_core::Radians(0.),
                     opacity: 1. - opacity,
                 },
@@ -624,6 +625,31 @@ where
         video_state.opacity_change();
         let _instant = match event {
             iced_core::Event::Window(iced_core::window::Event::RedrawRequested(instant)) => instant,
+            iced_core::Event::Keyboard(iced_core::keyboard::Event::KeyPressed {
+                key: iced_core::keyboard::Key::Named(iced_core::keyboard::key::Named::Space),
+                ..
+            }) => {
+                video_state.instant = Instant::now()
+                    .checked_add(Duration::from_secs(self.status_bar_delay))
+                    .unwrap();
+
+                shell.request_redraw();
+                if self.video.play_state() == gst::State::Playing {
+                    self.video.set_state(gst::State::Paused);
+                    if !video_state.status_bar_shown {
+                        video_state.opacity = 0.;
+                    }
+                    video_state.direction = Direction::Playing;
+                } else {
+                    self.video.set_state(gst::State::Playing);
+                    if !video_state.status_bar_shown {
+                        video_state.opacity = 1.;
+                    }
+                    video_state.direction = Direction::Pause;
+                }
+                video_state.status_bar_shown = true;
+                return;
+            }
             iced_core::Event::Mouse(event) => {
                 video_state.instant = Instant::now()
                     .checked_add(Duration::from_secs(self.status_bar_delay))
