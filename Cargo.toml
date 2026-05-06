@@ -17,7 +17,7 @@ gstreamer = "0.25.1"
 gstreamer-app = "0.25.0"
 url = "2.5.8"
 thiserror = "2.0.18"
-futures-time = "3.0.1"
+futures-time = "3.1.0"
 iced_wgpu = "0.14.0"
 iced_core = { version = "0.14.0", features = ["advanced"] }
 iced_widget = "0.14.2"
