@@ -1164,9 +1164,9 @@ checksum = "037711b3d59c33004d3856fbdc83b99d4ff37a24768fa1be9ce3538a1cde4393"
 
 [[package]]
 name = "futures-time"
-version = "3.0.1"
+version = "3.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "17f4f4272ec2be25287f1e184066c249b1f6b6d4d982d7c2f56f424096ae64e2"
+checksum = "24076708e74fbd55fb36079acbba19988175140026cc67a878b91b0c3751220b"
 dependencies = [
  "async-channel 1.9.0",
  "async-io",
