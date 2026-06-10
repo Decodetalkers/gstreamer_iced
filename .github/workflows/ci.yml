@@ -77,7 +77,7 @@ jobs:
       - build-test
     steps:
     - name: Checkout
-      uses: actions/checkout@v6
+      uses: actions/checkout@v6.0.2
       with:
         persist-credentials: false
 
