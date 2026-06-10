@@ -1,4 +1,3 @@
-use std::marker::PhantomData;
 use std::sync::atomic::Ordering;
 
 use crate::GVideo;
@@ -138,9 +137,6 @@ where
     class: Theme::Class<'a>,
     play_icon: svg::Handle,
     pause_icon: svg::Handle,
-    _theme: PhantomData<Theme>,
-    _message: PhantomData<Message>,
-    _renderer: PhantomData<Renderer>,
 }
 
 impl<'a, Message, Theme, Renderer> VideoPlayer<'a, Message, Theme, Renderer>
@@ -166,9 +162,6 @@ where
             class: Theme::default(),
             play_icon: svg::Handle::from_memory(PLAY_ICON),
             pause_icon: svg::Handle::from_memory(PAUSE_ICON),
-            _theme: PhantomData,
-            _message: PhantomData,
-            _renderer: PhantomData,
         }
     }
 
@@ -882,6 +875,81 @@ where
             }
         }
         iced_core::mouse::Interaction::default()
+    }
+}
+
+pub struct VideoPlayerOverlay<'a, Message, Theme, Renderer = iced_renderer::Renderer>
+where
+    Message: Clone,
+    Theme: Catalog,
+{
+    tree: &'a mut iced_core::widget::Tree,
+    widget: &'a mut Element<'a, Message, Theme, Renderer>,
+}
+
+impl<'a, Message, Theme, Renderer> iced_core::Overlay<Message, Theme, Renderer>
+    for VideoPlayerOverlay<'a, Message, Theme, Renderer>
+where
+    Message: Clone,
+    Theme: Catalog,
+    Renderer: iced_core::Renderer,
+{
+    fn draw(
+        &self,
+        renderer: &mut Renderer,
+        theme: &Theme,
+        style: &iced_core::renderer::Style,
+        layout: layout::Layout<'_>,
+        cursor: iced_core::mouse::Cursor,
+    ) {
+        self.widget.as_widget().draw(
+            self.tree,
+            renderer,
+            theme,
+            style,
+            layout,
+            cursor,
+            &layout.bounds(),
+        );
+    }
+    fn layout(&mut self, renderer: &Renderer, bounds: Size) -> layout::Node {
+        self.widget.as_widget_mut().layout(
+            self.tree,
+            renderer,
+            &iced_core::layout::Limits::new(bounds, bounds),
+        )
+    }
+
+    fn operate(
+        &mut self,
+        layout: layout::Layout<'_>,
+        renderer: &Renderer,
+        operation: &mut dyn iced_core::widget::Operation,
+    ) {
+        self.widget
+            .as_widget_mut()
+            .operate(self.tree, layout, renderer, operation);
+    }
+
+    fn update(
+        &mut self,
+        event: &iced_core::Event,
+        layout: layout::Layout<'_>,
+        cursor: iced_core::mouse::Cursor,
+        renderer: &Renderer,
+        clipboard: &mut dyn iced_core::Clipboard,
+        shell: &mut iced_core::Shell<'_, Message>,
+    ) {
+        self.widget.as_widget_mut().update(
+            self.tree,
+            event,
+            layout,
+            cursor,
+            renderer,
+            clipboard,
+            shell,
+            &layout.bounds(),
+        );
     }
 }
 
