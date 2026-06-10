@@ -55,6 +55,7 @@ impl GProgram {
             .on_position_changed(GIcedMessage::PositionChanged)
             .on_duration_changed(GIcedMessage::DurationChanged)
             .on_state_changed(GIcedMessage::StateChanged)
+            .menu(text("abc"))
             .status_bar(bar)
             .width(Length::Fill)
             .height(Length::Fill)

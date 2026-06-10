@@ -132,6 +132,7 @@ where
     on_position_changed: Option<Box<dyn Fn(Duration) -> Message + 'a>>,
     on_state_changed: Option<Box<dyn Fn(State) -> Message + 'a>>,
     status_bar: Option<Element<'a, Message, Theme, Renderer>>,
+    menu: Option<Element<'a, Message, Theme, Renderer>>,
     status_bar_delay: u64,
     status_bar_height: f32,
     class: Theme::Class<'a>,
@@ -156,6 +157,7 @@ where
             on_duration_changed: None,
             on_position_changed: None,
             on_state_changed: None,
+            menu: None,
             status_bar: None,
             status_bar_delay: 2,
             status_bar_height: 70.,
@@ -239,6 +241,13 @@ where
             ..self
         }
     }
+    pub fn menu(self, menu: impl Into<Element<'a, Message, Theme, Renderer>>) -> Self {
+        VideoPlayer {
+            menu: Some(menu.into()),
+            ..self
+        }
+    }
+
     pub fn status_bar_height(self, status_bar_height: f32) -> Self {
         VideoPlayer {
             status_bar_height,
@@ -876,19 +885,56 @@ where
         }
         iced_core::mouse::Interaction::default()
     }
+    fn overlay<'a>(
+        &'a mut self,
+        tree: &'a mut iced_core::widget::Tree,
+        _layout: layout::Layout<'a>,
+        _renderer: &Renderer,
+        _viewport: &Rectangle,
+        _translation: Vector,
+    ) -> Option<iced_core::overlay::Element<'a, Message, Theme, Renderer>> {
+        if let Some(menu) = &mut self.menu {
+            return Some(VideoPlayerOverlay::new(tree, menu, (0., 0.)).overlay());
+        };
+        None
+    }
 }
 
-pub struct VideoPlayerOverlay<'a, Message, Theme, Renderer = iced_renderer::Renderer>
+pub struct VideoPlayerOverlay<'a, 'b, Message, Theme, Renderer = iced_renderer::Renderer>
 where
     Message: Clone,
     Theme: Catalog,
 {
     tree: &'a mut iced_core::widget::Tree,
-    widget: &'a mut Element<'a, Message, Theme, Renderer>,
+    widget: &'a mut Element<'b, Message, Theme, Renderer>,
+    position: Point,
 }
 
-impl<'a, Message, Theme, Renderer> iced_core::Overlay<Message, Theme, Renderer>
-    for VideoPlayerOverlay<'a, Message, Theme, Renderer>
+impl<'a, 'b, Message, Theme, Renderer> VideoPlayerOverlay<'a, 'b, Message, Theme, Renderer>
+where
+    Message: Clone,
+    Theme: Catalog,
+    Renderer: iced_core::Renderer,
+{
+    fn new(
+        tree: &'a mut iced_core::widget::Tree,
+        widget: &'a mut Element<'b, Message, Theme, Renderer>,
+        position: impl Into<Point>,
+    ) -> Self {
+        Self {
+            tree,
+            widget,
+            position: position.into(),
+        }
+    }
+    #[must_use]
+    pub fn overlay(self) -> iced_core::overlay::Element<'a, Message, Theme, Renderer> {
+        iced_core::overlay::Element::new(Box::new(self))
+    }
+}
+
+impl<'a, 'b, Message, Theme, Renderer> iced_core::Overlay<Message, Theme, Renderer>
+    for VideoPlayerOverlay<'a, 'b, Message, Theme, Renderer>
 where
     Message: Clone,
     Theme: Catalog,
@@ -913,11 +959,14 @@ where
         );
     }
     fn layout(&mut self, renderer: &Renderer, bounds: Size) -> layout::Node {
-        self.widget.as_widget_mut().layout(
-            self.tree,
-            renderer,
-            &iced_core::layout::Limits::new(bounds, bounds),
-        )
+        self.widget
+            .as_widget_mut()
+            .layout(
+                self.tree,
+                renderer,
+                &iced_core::layout::Limits::new(bounds, bounds),
+            )
+            .move_to(self.position)
     }
 
     fn operate(
