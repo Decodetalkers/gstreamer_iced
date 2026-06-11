@@ -904,10 +904,11 @@ where
         _viewport: &Rectangle,
         _translation: Vector,
     ) -> Option<iced_core::overlay::Element<'a, Message, Theme, Renderer>> {
-        if let Some(menu) = &mut self.menu {
-            return Some(VideoPlayerOverlay::new(&mut tree.children[1], menu, (0., 0.)).overlay());
+        let Some(menu) = &mut self.menu else {
+            return None;
         };
-        None
+
+        Some(VideoPlayerOverlay::new(&mut tree.children[1], menu, (100., 100.)).overlay())
     }
 }
 
