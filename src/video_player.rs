@@ -349,7 +349,10 @@ struct VideoState {
     icon_size: Option<iced_core::Size>,
     instant: Instant,
     status_bar_shown: bool,
+    menu_shown: bool,
+    menu_position: Point,
     icon_instant: Instant,
+    limits: iced_core::layout::Limits,
     direction: Direction,
     opacity: f32,
 }
@@ -414,6 +417,12 @@ where
                 .unwrap(),
 
             status_bar_shown: false,
+            menu_shown: false,
+            menu_position: Point::default(),
+            limits: iced_core::layout::Limits::new(
+                iced_core::Size::default(),
+                iced_core::Size::default(),
+            ),
             icon_instant: Instant::now().checked_add(Duration::from_secs(1)).unwrap(),
             direction,
             opacity,
@@ -458,6 +467,7 @@ where
                 height: self.status_bar_height,
             },
         );
+        video_state.limits = limits;
 
         let y = final_size.height - self.status_bar_height;
 
@@ -664,43 +674,51 @@ where
                 return;
             }
             iced_core::Event::Mouse(event) => {
+                use iced_core::mouse::Button;
                 video_state.instant = Instant::now()
                     .checked_add(Duration::from_secs(self.status_bar_delay))
                     .unwrap();
                 video_state.status_bar_shown = true;
                 shell.request_redraw();
-                if let Some(icon_size) = video_state.icon_size
-                    && let iced_core::mouse::Event::ButtonPressed(iced_core::mouse::Button::Left) =
-                        event
+                if let iced_core::mouse::Event::ButtonReleased(Button::Right) = event
+                    && let Some(point) = cursor.position()
                 {
-                    let bounds = layout.bounds();
-                    let adjusted_fit = self
-                        .content_fit
-                        .fit(icon_size, bounds.size() / PLAY_ICON_SCALE);
-                    let scale = Vector::new(
-                        adjusted_fit.width / icon_size.width,
-                        adjusted_fit.height / icon_size.height,
-                    );
+                    video_state.menu_shown = true;
+                    video_state.menu_position = point;
+                    return;
+                }
+                if let iced_core::mouse::Event::ButtonPressed(Button::Left) = event {
+                    video_state.menu_shown = false;
+                    if let Some(icon_size) = video_state.icon_size {
+                        let bounds = layout.bounds();
+                        let adjusted_fit = self
+                            .content_fit
+                            .fit(icon_size, bounds.size() / PLAY_ICON_SCALE);
+                        let scale = Vector::new(
+                            adjusted_fit.width / icon_size.width,
+                            adjusted_fit.height / icon_size.height,
+                        );
 
-                    let final_size = icon_size * scale;
+                        let final_size = icon_size * scale;
 
-                    let position = match self.content_fit {
-                        ContentFit::None => Point::new(
-                            bounds.x + (icon_size.width - adjusted_fit.width) / 2.0,
-                            bounds.y + (icon_size.height - adjusted_fit.height) / 2.0,
-                        ),
-                        _ => Point::new(
-                            bounds.center_x() - final_size.width / 2.0,
-                            bounds.center_y() - final_size.height / 2.0,
-                        ),
-                    };
+                        let position = match self.content_fit {
+                            ContentFit::None => Point::new(
+                                bounds.x + (icon_size.width - adjusted_fit.width) / 2.0,
+                                bounds.y + (icon_size.height - adjusted_fit.height) / 2.0,
+                            ),
+                            _ => Point::new(
+                                bounds.center_x() - final_size.width / 2.0,
+                                bounds.center_y() - final_size.height / 2.0,
+                            ),
+                        };
 
-                    let drawing_bounds = Rectangle::new(position, final_size);
-                    if cursor.is_over(drawing_bounds) {
-                        if self.video.play_state() == gst::State::Playing {
-                            self.video.set_state(gst::State::Paused);
-                        } else {
-                            self.video.set_state(gst::State::Playing);
+                        let drawing_bounds = Rectangle::new(position, final_size);
+                        if cursor.is_over(drawing_bounds) {
+                            if self.video.play_state() == gst::State::Playing {
+                                self.video.set_state(gst::State::Paused);
+                            } else {
+                                self.video.set_state(gst::State::Playing);
+                            }
                         }
                     }
                 }
@@ -908,7 +926,19 @@ where
             return None;
         };
 
-        Some(VideoPlayerOverlay::new(&mut tree.children[1], menu, (100., 100.)).overlay())
+        let video_state: &VideoState = tree.state.downcast_ref();
+        if !video_state.menu_shown {
+            return None;
+        }
+        Some(
+            VideoPlayerOverlay::new(
+                &mut tree.children[1],
+                menu,
+                video_state.limits,
+                video_state.menu_position,
+            )
+            .overlay(),
+        )
     }
 }
 
@@ -919,6 +949,7 @@ where
 {
     tree: &'a mut iced_core::widget::Tree,
     widget: &'a mut Element<'b, Message, Theme, Renderer>,
+    limits: iced_core::layout::Limits,
     position: Point,
 }
 
@@ -931,11 +962,13 @@ where
     fn new(
         tree: &'a mut iced_core::widget::Tree,
         widget: &'a mut Element<'b, Message, Theme, Renderer>,
+        limits: iced_core::layout::Limits,
         position: impl Into<Point>,
     ) -> Self {
         Self {
             tree,
             widget,
+            limits,
             position: position.into(),
         }
     }
@@ -970,14 +1003,10 @@ where
             &layout.bounds(),
         );
     }
-    fn layout(&mut self, renderer: &Renderer, bounds: Size) -> layout::Node {
+    fn layout(&mut self, renderer: &Renderer, _bounds: Size) -> layout::Node {
         self.widget
             .as_widget_mut()
-            .layout(
-                self.tree,
-                renderer,
-                &iced_core::layout::Limits::new(bounds, bounds),
-            )
+            .layout(self.tree, renderer, &self.limits)
             .move_to(self.position)
     }
 
