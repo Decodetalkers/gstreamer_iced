@@ -55,6 +55,15 @@ impl GProgram {
             .on_position_changed(GIcedMessage::PositionChanged)
             .on_duration_changed(GIcedMessage::DurationChanged)
             .on_state_changed(GIcedMessage::StateChanged)
+            .right_click(
+                container(text("This is a right click").center())
+                    .center_x(100)
+                    .center_y(100)
+                    .style(|_| container::Style {
+                        background: Some(iced::Background::Color(iced::Color::WHITE)),
+                        ..Default::default()
+                    }),
+            )
             .status_bar(bar)
             .width(Length::Fill)
             .height(Length::Fill)

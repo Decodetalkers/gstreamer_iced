@@ -1,4 +1,3 @@
-use std::marker::PhantomData;
 use std::sync::atomic::Ordering;
 
 use crate::GVideo;
@@ -133,14 +132,12 @@ where
     on_position_changed: Option<Box<dyn Fn(Duration) -> Message + 'a>>,
     on_state_changed: Option<Box<dyn Fn(State) -> Message + 'a>>,
     status_bar: Option<Element<'a, Message, Theme, Renderer>>,
+    menu: Option<Element<'a, Message, Theme, Renderer>>,
     status_bar_delay: u64,
     status_bar_height: f32,
     class: Theme::Class<'a>,
     play_icon: svg::Handle,
     pause_icon: svg::Handle,
-    _theme: PhantomData<Theme>,
-    _message: PhantomData<Message>,
-    _renderer: PhantomData<Renderer>,
 }
 
 impl<'a, Message, Theme, Renderer> VideoPlayer<'a, Message, Theme, Renderer>
@@ -160,15 +157,13 @@ where
             on_duration_changed: None,
             on_position_changed: None,
             on_state_changed: None,
+            menu: None,
             status_bar: None,
             status_bar_delay: 2,
             status_bar_height: 70.,
             class: Theme::default(),
             play_icon: svg::Handle::from_memory(PLAY_ICON),
             pause_icon: svg::Handle::from_memory(PAUSE_ICON),
-            _theme: PhantomData,
-            _message: PhantomData,
-            _renderer: PhantomData,
         }
     }
 
@@ -240,18 +235,31 @@ where
         }
     }
 
+    /// Set if video_player with a bottom status_bar
     pub fn status_bar(self, status_bar: impl Into<Element<'a, Message, Theme, Renderer>>) -> Self {
         VideoPlayer {
             status_bar: Some(status_bar.into()),
             ..self
         }
     }
+
+    /// This will let a right click menu shown you can place some video information here
+    pub fn right_click(self, menu: impl Into<Element<'a, Message, Theme, Renderer>>) -> Self {
+        VideoPlayer {
+            menu: Some(menu.into()),
+            ..self
+        }
+    }
+
+    /// Set the height of status bar
     pub fn status_bar_height(self, status_bar_height: f32) -> Self {
         VideoPlayer {
             status_bar_height,
             ..self
         }
     }
+
+    /// Set the delay of status bar
     pub fn status_bar_delay(self, status_bar_delay: u64) -> Self {
         VideoPlayer {
             status_bar_delay,
@@ -259,6 +267,7 @@ where
         }
     }
 
+    /// set the style of video_player
     #[must_use]
     pub fn style(mut self, style: impl Fn(&Theme) -> Style + 'a) -> Self
     where
@@ -347,7 +356,10 @@ struct VideoState {
     icon_size: Option<iced_core::Size>,
     instant: Instant,
     status_bar_shown: bool,
+    menu_shown: bool,
+    menu_position: Point,
     icon_instant: Instant,
+    limits: iced_core::layout::Limits,
     direction: Direction,
     opacity: f32,
 }
@@ -412,6 +424,12 @@ where
                 .unwrap(),
 
             status_bar_shown: false,
+            menu_shown: false,
+            menu_position: Point::default(),
+            limits: iced_core::layout::Limits::new(
+                iced_core::Size::default(),
+                iced_core::Size::default(),
+            ),
             icon_instant: Instant::now().checked_add(Duration::from_secs(1)).unwrap(),
             direction,
             opacity,
@@ -456,6 +474,7 @@ where
                 height: self.status_bar_height,
             },
         );
+        video_state.limits = limits;
 
         let y = final_size.height - self.status_bar_height;
 
@@ -473,16 +492,27 @@ where
     }
 
     fn children(&self) -> Vec<iced_core::widget::Tree> {
-        match &self.status_bar {
+        let mut children = match &self.status_bar {
             Some(bar) => vec![iced_core::widget::Tree::new(bar)],
             None => vec![],
+        };
+
+        if let Some(overlay) = &self.menu {
+            children.push(iced_core::widget::Tree::new(overlay));
         }
+
+        children
     }
 
     fn diff(&self, tree: &mut iced_core::widget::Tree) {
+        let mut children = vec![];
         if let Some(bar) = &self.status_bar {
-            tree.diff_children(&[bar]);
+            children.push(bar);
         }
+        if let Some(menu) = &self.menu {
+            children.push(menu);
+        }
+        tree.diff_children(&children);
     }
 
     fn operate<'b>(
@@ -651,43 +681,51 @@ where
                 return;
             }
             iced_core::Event::Mouse(event) => {
+                use iced_core::mouse::Button;
                 video_state.instant = Instant::now()
                     .checked_add(Duration::from_secs(self.status_bar_delay))
                     .unwrap();
                 video_state.status_bar_shown = true;
                 shell.request_redraw();
-                if let Some(icon_size) = video_state.icon_size
-                    && let iced_core::mouse::Event::ButtonPressed(iced_core::mouse::Button::Left) =
-                        event
+                if let iced_core::mouse::Event::ButtonReleased(Button::Right) = event
+                    && let Some(point) = cursor.position()
                 {
-                    let bounds = layout.bounds();
-                    let adjusted_fit = self
-                        .content_fit
-                        .fit(icon_size, bounds.size() / PLAY_ICON_SCALE);
-                    let scale = Vector::new(
-                        adjusted_fit.width / icon_size.width,
-                        adjusted_fit.height / icon_size.height,
-                    );
+                    video_state.menu_shown = true;
+                    video_state.menu_position = point;
+                    return;
+                }
+                if let iced_core::mouse::Event::ButtonPressed(Button::Left) = event {
+                    video_state.menu_shown = false;
+                    if let Some(icon_size) = video_state.icon_size {
+                        let bounds = layout.bounds();
+                        let adjusted_fit = self
+                            .content_fit
+                            .fit(icon_size, bounds.size() / PLAY_ICON_SCALE);
+                        let scale = Vector::new(
+                            adjusted_fit.width / icon_size.width,
+                            adjusted_fit.height / icon_size.height,
+                        );
 
-                    let final_size = icon_size * scale;
+                        let final_size = icon_size * scale;
 
-                    let position = match self.content_fit {
-                        ContentFit::None => Point::new(
-                            bounds.x + (icon_size.width - adjusted_fit.width) / 2.0,
-                            bounds.y + (icon_size.height - adjusted_fit.height) / 2.0,
-                        ),
-                        _ => Point::new(
-                            bounds.center_x() - final_size.width / 2.0,
-                            bounds.center_y() - final_size.height / 2.0,
-                        ),
-                    };
+                        let position = match self.content_fit {
+                            ContentFit::None => Point::new(
+                                bounds.x + (icon_size.width - adjusted_fit.width) / 2.0,
+                                bounds.y + (icon_size.height - adjusted_fit.height) / 2.0,
+                            ),
+                            _ => Point::new(
+                                bounds.center_x() - final_size.width / 2.0,
+                                bounds.center_y() - final_size.height / 2.0,
+                            ),
+                        };
 
-                    let drawing_bounds = Rectangle::new(position, final_size);
-                    if cursor.is_over(drawing_bounds) {
-                        if self.video.play_state() == gst::State::Playing {
-                            self.video.set_state(gst::State::Paused);
-                        } else {
-                            self.video.set_state(gst::State::Playing);
+                        let drawing_bounds = Rectangle::new(position, final_size);
+                        if cursor.is_over(drawing_bounds) {
+                            if self.video.play_state() == gst::State::Playing {
+                                self.video.set_state(gst::State::Paused);
+                            } else {
+                                self.video.set_state(gst::State::Playing);
+                            }
                         }
                     }
                 }
@@ -882,6 +920,133 @@ where
             }
         }
         iced_core::mouse::Interaction::default()
+    }
+    fn overlay<'a>(
+        &'a mut self,
+        tree: &'a mut iced_core::widget::Tree,
+        _layout: layout::Layout<'a>,
+        _renderer: &Renderer,
+        _viewport: &Rectangle,
+        _translation: Vector,
+    ) -> Option<iced_core::overlay::Element<'a, Message, Theme, Renderer>> {
+        let Some(menu) = &mut self.menu else {
+            return None;
+        };
+
+        let video_state: &VideoState = tree.state.downcast_ref();
+        if !video_state.menu_shown {
+            return None;
+        }
+        Some(
+            VideoPlayerOverlay::new(
+                &mut tree.children[1],
+                menu,
+                video_state.limits,
+                video_state.menu_position,
+            )
+            .overlay(),
+        )
+    }
+}
+
+pub struct VideoPlayerOverlay<'a, 'b, Message, Theme, Renderer = iced_renderer::Renderer>
+where
+    Message: Clone,
+    Theme: Catalog,
+{
+    tree: &'a mut iced_core::widget::Tree,
+    widget: &'a mut Element<'b, Message, Theme, Renderer>,
+    limits: iced_core::layout::Limits,
+    position: Point,
+}
+
+impl<'a, 'b, Message, Theme, Renderer> VideoPlayerOverlay<'a, 'b, Message, Theme, Renderer>
+where
+    Message: Clone,
+    Theme: Catalog,
+    Renderer: iced_core::Renderer,
+{
+    fn new(
+        tree: &'a mut iced_core::widget::Tree,
+        widget: &'a mut Element<'b, Message, Theme, Renderer>,
+        limits: iced_core::layout::Limits,
+        position: impl Into<Point>,
+    ) -> Self {
+        Self {
+            tree,
+            widget,
+            limits,
+            position: position.into(),
+        }
+    }
+    #[must_use]
+    pub fn overlay(self) -> iced_core::overlay::Element<'a, Message, Theme, Renderer> {
+        iced_core::overlay::Element::new(Box::new(self))
+    }
+}
+
+impl<'a, 'b, Message, Theme, Renderer> iced_core::Overlay<Message, Theme, Renderer>
+    for VideoPlayerOverlay<'a, 'b, Message, Theme, Renderer>
+where
+    Message: Clone,
+    Theme: Catalog,
+    Renderer: iced_core::Renderer,
+{
+    fn draw(
+        &self,
+        renderer: &mut Renderer,
+        theme: &Theme,
+        style: &iced_core::renderer::Style,
+        layout: layout::Layout<'_>,
+        cursor: iced_core::mouse::Cursor,
+    ) {
+        self.widget.as_widget().draw(
+            self.tree,
+            renderer,
+            theme,
+            style,
+            layout,
+            cursor,
+            &layout.bounds(),
+        );
+    }
+    fn layout(&mut self, renderer: &Renderer, _bounds: Size) -> layout::Node {
+        self.widget
+            .as_widget_mut()
+            .layout(self.tree, renderer, &self.limits)
+            .move_to(self.position)
+    }
+
+    fn operate(
+        &mut self,
+        layout: layout::Layout<'_>,
+        renderer: &Renderer,
+        operation: &mut dyn iced_core::widget::Operation,
+    ) {
+        self.widget
+            .as_widget_mut()
+            .operate(self.tree, layout, renderer, operation);
+    }
+
+    fn update(
+        &mut self,
+        event: &iced_core::Event,
+        layout: layout::Layout<'_>,
+        cursor: iced_core::mouse::Cursor,
+        renderer: &Renderer,
+        clipboard: &mut dyn iced_core::Clipboard,
+        shell: &mut iced_core::Shell<'_, Message>,
+    ) {
+        self.widget.as_widget_mut().update(
+            self.tree,
+            event,
+            layout,
+            cursor,
+            renderer,
+            clipboard,
+            shell,
+            &layout.bounds(),
+        );
     }
 }
 
