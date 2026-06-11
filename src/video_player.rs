@@ -475,16 +475,27 @@ where
     }
 
     fn children(&self) -> Vec<iced_core::widget::Tree> {
-        match &self.status_bar {
+        let mut children = match &self.status_bar {
             Some(bar) => vec![iced_core::widget::Tree::new(bar)],
             None => vec![],
+        };
+
+        if let Some(overlay) = &self.menu {
+            children.push(iced_core::widget::Tree::new(overlay));
         }
+
+        children
     }
 
     fn diff(&self, tree: &mut iced_core::widget::Tree) {
+        let mut children = vec![];
         if let Some(bar) = &self.status_bar {
-            tree.diff_children(&[bar]);
+            children.push(bar);
         }
+        if let Some(menu) = &self.menu {
+            children.push(menu);
+        }
+        tree.diff_children(&children);
     }
 
     fn operate<'b>(
@@ -894,7 +905,7 @@ where
         _translation: Vector,
     ) -> Option<iced_core::overlay::Element<'a, Message, Theme, Renderer>> {
         if let Some(menu) = &mut self.menu {
-            return Some(VideoPlayerOverlay::new(tree, menu, (0., 0.)).overlay());
+            return Some(VideoPlayerOverlay::new(&mut tree.children[1], menu, (0., 0.)).overlay());
         };
         None
     }
