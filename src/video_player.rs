@@ -235,25 +235,31 @@ where
         }
     }
 
+    /// Set if video_player with a bottom status_bar
     pub fn status_bar(self, status_bar: impl Into<Element<'a, Message, Theme, Renderer>>) -> Self {
         VideoPlayer {
             status_bar: Some(status_bar.into()),
             ..self
         }
     }
-    pub fn menu(self, menu: impl Into<Element<'a, Message, Theme, Renderer>>) -> Self {
+
+    /// This will let a right click menu shown you can place some video information here
+    pub fn right_click(self, menu: impl Into<Element<'a, Message, Theme, Renderer>>) -> Self {
         VideoPlayer {
             menu: Some(menu.into()),
             ..self
         }
     }
 
+    /// Set the height of status bar
     pub fn status_bar_height(self, status_bar_height: f32) -> Self {
         VideoPlayer {
             status_bar_height,
             ..self
         }
     }
+
+    /// Set the delay of status bar
     pub fn status_bar_delay(self, status_bar_delay: u64) -> Self {
         VideoPlayer {
             status_bar_delay,
@@ -261,6 +267,7 @@ where
         }
     }
 
+    /// set the style of video_player
     #[must_use]
     pub fn style(mut self, style: impl Fn(&Theme) -> Style + 'a) -> Self
     where

@@ -55,7 +55,7 @@ impl GProgram {
             .on_position_changed(GIcedMessage::PositionChanged)
             .on_duration_changed(GIcedMessage::DurationChanged)
             .on_state_changed(GIcedMessage::StateChanged)
-            .menu(
+            .right_click(
                 container(text("This is a right click").center())
                     .center_x(100)
                     .center_y(100)
